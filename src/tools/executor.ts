@@ -123,7 +123,13 @@ async function editDocument(
   input: Record<string, unknown>
 ): Promise<ToolResult> {
   const operation = requiredString(input.operation);
-  const content = requiredString(input.content);
+  // A missing `content` must not become "": replace_all would blank the
+  // note and find_replace would delete the found text, both reported as
+  // success. An explicit "" (delete on purpose) is fine.
+  if (typeof input.content !== "string") {
+    return { result: "'content' is required for edit_document (use \"\" to delete text).", isError: true };
+  }
+  const content = input.content;
   const find = optionalString(input.find);
   const position = optionalString(input.position);
 
