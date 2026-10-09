@@ -1,6 +1,6 @@
 // The chat view and the plugin's chat commands with a fake Svelte component:
-// the API history cap, what the chat history saves, Copy transcript, and
-// commands waiting for the view.
+// the API history cap, what the chat history saves, Stop and Clear, Copy
+// transcript, and commands waiting for the view.
 import assert from 'node:assert/strict';
 import { test, beforeEach } from 'node:test';
 import { api, settings, text, call, image, response, transport, vaultApp, callbacks } from './harness.mjs';
