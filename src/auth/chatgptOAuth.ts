@@ -30,6 +30,8 @@ const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const DEVICE_VERIFICATION_URI = `${ISSUER}/codex/device`;
 const DEVICE_REDIRECT_URI = `${ISSUER}/deviceauth/callback`;
 const POLL_MARGIN_MS = 3000;
+/** How long a device code is polled: it expires after 15 minutes. */
+const DEVICE_CODE_TIMEOUT_MS = 15 * 60 * 1000;
 const USER_AGENT = "chatting-with-ai/chatgpt-oauth";
 
 export class ChatGPTOAuthError extends Error {
@@ -198,24 +200,36 @@ export class ChatGPTOAuthService {
     };
 
     const promise = (async (): Promise<ChatGPTOAuthCredential> => {
+      const deadline = Date.now() + DEVICE_CODE_TIMEOUT_MS;
       while (true) {
         if (cancelled) {
           throw new ChatGPTOAuthError("ChatGPT login was cancelled.");
         }
+        if (Date.now() > deadline) {
+          throw new ChatGPTOAuthError("The ChatGPT login code has expired. Start the login again.");
+        }
 
-        const response = await requestUrl({
-          url: `${ISSUER}/api/accounts/deviceauth/token`,
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
-          },
-          body: JSON.stringify({
-            device_auth_id: authorization.deviceAuthId,
-            user_code: authorization.userCode,
-          }),
-          throw: false,
-        });
+        let response;
+        try {
+          response = await requestUrl({
+            url: `${ISSUER}/api/accounts/deviceauth/token`,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent": USER_AGENT,
+            },
+            body: JSON.stringify({
+              device_auth_id: authorization.deviceAuthId,
+              user_code: authorization.userCode,
+            }),
+            throw: false,
+          });
+        } catch {
+          // No connection for a moment (e.g. a phone while the user signs
+          // in in the browser): ask again after the interval.
+          await sleep(authorization.intervalMs + POLL_MARGIN_MS);
+          continue;
+        }
 
         if (response.status >= 200 && response.status < 300) {
           const data = response.json as Partial<DeviceTokenSuccess>;

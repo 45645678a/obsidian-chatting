@@ -122,3 +122,38 @@ test('Parallel 401s share one refresh, and both retry with the new token', async
   assert.equal(calls.refresh, 1);
   assert.deepEqual(calls.bearers.slice(2), ['Bearer fake-access-2', 'Bearer fake-access-2']);
 });
+
+test('Device-code polling survives network errors and stops when the code expires', async () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { setTimeout: fn => setTimeout(fn, 0) };
+  const authorization = { deviceAuthId: 'fake-device', userCode: 'ABCD-1234', verificationUri: 'https://auth.openai.com/codex/device', intervalMs: 0 };
+  try {
+    const { oauth } = signedIn();
+    oauth.clearCredential();
+    const polls = [];
+    globalThis.__providerRequest = async request => {
+      if (request.url === TOKEN_URL) return { status: 200, json: { access_token: 'fake-access-new', refresh_token: 'fake-refresh-new', expires_in: 3600 } };
+      polls.push(request.url);
+      // Like a phone that can't resolve the host for a moment, then a pending code, then the user's approval.
+      if (polls.length <= 2) throw new Error('net::ERR_NAME_NOT_RESOLVED');
+      if (polls.length === 3) return { status: 403, json: {} };
+      return { status: 200, json: { authorization_code: 'fake-code', code_verifier: 'fake-verifier' } };
+    };
+    const credential = await oauth.pollDeviceAuthorization(authorization).promise;
+    assert.equal(polls.length, 4);
+    assert.equal(credential.accessToken, 'fake-access-new');
+    assert.deepEqual(oauth.getCredential(), credential);
+
+    // Offline until the code expires: the poll ends with an error.
+    const realNow = Date.now;
+    let offset = 0;
+    Date.now = () => realNow() + offset;
+    try {
+      globalThis.__providerRequest = async () => { offset += 5 * 60 * 1000; throw new Error('net::ERR_INTERNET_DISCONNECTED'); };
+      await assert.rejects(oauth.pollDeviceAuthorization(authorization).promise, /code has expired/);
+    } finally { Date.now = realNow; }
+    // Another error status still ends the poll at once.
+    globalThis.__providerRequest = async () => ({ status: 500, text: 'Server error' });
+    await assert.rejects(oauth.pollDeviceAuthorization(authorization).promise, /polling failed: HTTP 500/);
+  } finally { globalThis.window = previousWindow; }
+});
