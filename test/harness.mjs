@@ -33,7 +33,7 @@ export const bundled = await build({
       export class Menu {}
       export const MarkdownRenderer = { render: async () => {} };
       export class Modal {}
-      export class PluginSettingTab {}
+      export class PluginSettingTab { hide() {} }
       export class Setting {}
       export const requireApiVersion = () => globalThis.__supportsNewObsidian === true;
       export class Notice { constructor(message) { (globalThis.__notices ??= []).push(message); } }

@@ -44,14 +44,23 @@ export class ChatSettingTab extends PluginSettingTab {
   private catalogError = "";
   private apiKeyEditing = false;
   private apiKeyTimer?: number;
+  /** Set while the tab is closed, so pending redraws (timers, model list loads) skip it. */
+  private hidden = false;
 
   constructor(app: App, plugin: ChatPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
+  hide(): void {
+    super.hide();
+    this.hidden = true;
+  }
+
   // Obsidian 1.13+ indexes these definitions; older versions retain display().
   getSettingDefinitions(): SettingDefinitionItem[] {
+    // Called each time the tab is shown on 1.13+ (and once for indexing).
+    this.hidden = false;
     return [
       { name: "Provider", render: setting => this.renderProvider(setting) },
       { name: "API key", visible: () => this.plugin.settings.provider !== "chatgpt-oauth", render: setting => this.renderApiKeySection(setting.settingEl.parentElement!, setting) },
@@ -66,11 +75,13 @@ export class ChatSettingTab extends PluginSettingTab {
   }
 
   private refreshSettingsTab(): void {
+    if (this.hidden) return;
     if (requireApiVersion("1.13.0")) this.update();
     else this.display();
   }
 
   display(): void {
+    this.hidden = false;
     const { containerEl } = this;
     containerEl.empty();
     const s = this.plugin.settings;
