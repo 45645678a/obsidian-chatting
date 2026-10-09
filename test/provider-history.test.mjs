@@ -145,7 +145,8 @@ test('Anthropic: thinking/signatures/redacted thinking/search/citations replay u
   const messages = [{ role: 'user', content: [text('Read'), { type: 'image', image }] }];
   const requests = transport((body, index) => response('anthropic', index ? [text('Done')] : raw, index ? 'end_turn' : 'tool_use'));
   const first = await api.sendAnthropicMessage(settings('anthropic'), messages, [], 'System');
-  assert.deepEqual(first.content.map(block => block.type), ['text', 'tool_use']);
+  assert.deepEqual(first.content.map(block => block.type), ['text', 'text', 'tool_use']);
+  assert.equal(first.content[1].text, '\n\nSources:\n- [https://example.com](https://example.com)');
   messages.push(assistant(first), { role: 'user', content: [result('read', 'Contents', true)] });
   await api.sendAnthropicMessage(settings('anthropic'), JSON.parse(JSON.stringify(messages)), [], 'System');
   assert.deepEqual(requests[1].messages[1].content, raw);
