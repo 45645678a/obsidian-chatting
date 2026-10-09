@@ -10,6 +10,7 @@ import {
 } from "obsidian";
 import type { ChatSettings, SelectionScope, ImageAttachment } from "./types";
 import { DEFAULT_SETTINGS, DEFAULT_PROVIDER_MODELS } from "./types";
+import { copiesBefore } from "./tools/executor";
 import { ChatSettingTab, getModelDisplayName } from "./settings";
 import { ObsidianChatView, VIEW_TYPE_CHAT } from "./ui/chat-view";
 import { AgentLoop } from "./agent/loop";
@@ -28,6 +29,12 @@ const LEGACY_CHATGPT_OAUTH_SECRET_KEY = `${LEGACY_PLUGIN_ID}-chatgpt-oauth`;
 // the same key without persisting promises or adding a file lock.
 const CHAT_STATE_WRITE = Symbol.for("chatting-with-ai-pending-chat-state-write");
 type ChatPersistenceApp = App & { [CHAT_STATE_WRITE]?: Promise<void> };
+
+/** The editor's selection as a scope, with where it starts in the note. */
+export function selectionScope(editor: Editor, text: string, filePath: string): SelectionScope {
+  const from = editor.posToOffset(editor.getCursor("from"));
+  return { text, filePath, from, occurrence: copiesBefore(editor.getValue(), text, from) };
+}
 
 export default class ChatPlugin extends Plugin {
   settings: ChatSettings = DEFAULT_SETTINGS;
@@ -132,7 +139,7 @@ export default class ChatPlugin extends Plugin {
         const sel = editor.getSelection();
         if (!sel || sel.length === 0) return false;
         if (checking) return true;
-        const scope: SelectionScope = { text: sel, filePath: ctx.file?.path ?? "" };
+        const scope = selectionScope(editor, sel, ctx.file?.path ?? "");
         void this.openChatWithSelection(scope);
         return true;
       },
@@ -158,12 +165,13 @@ export default class ChatPlugin extends Plugin {
       this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, info: MarkdownFileInfo) => {
         const sel = editor.getSelection();
         if (sel && sel.length > 0) {
+          // Read now, while the selection the menu was opened on is current.
+          const scope = selectionScope(editor, sel, info.file?.path ?? "");
           menu.addItem((item) =>
             item
               .setTitle("Send selection to chat")
               .setIcon("message-circle")
               .onClick(() => {
-                const scope: SelectionScope = { text: sel, filePath: info.file?.path ?? "" };
                 void this.openChatWithSelection(scope);
               })
           );

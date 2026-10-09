@@ -162,6 +162,9 @@ export class AgentLoop {
   ): Promise<void> {
     const version = ++this.runVersion;
     const isStopped = () => version !== this.runVersion;
+    // This turn's selection: the tools change only that text of its note (a
+    // copy, since its text follows the edits).
+    const scope = selection ? { ...selection } : undefined;
     // Keep one provider/model/credential configuration for this entire turn.
     const turnSettings = { ...this.settings };
 
@@ -175,7 +178,7 @@ export class AgentLoop {
       fullMessage = [
         contextPrefix,
         "",
-        `[Selection scope: The user has selected text in ${selection.filePath}. Work only within this selection. When using edit_document, use find_replace with text from within this selection. Do not modify text outside the selection.]`,
+        `[Selection scope: The user has selected text in ${selection.filePath}. Work only within this selection. When using edit_document, use find_replace with text from within this selection; 'find' is matched inside the selection, so no surrounding context is needed. Do not modify text outside the selection.]`,
         "",
         `Selected text:`,
         selection.text.split(/\r?\n/).map((line) => `> ${line}`).join("\n"),
@@ -295,7 +298,8 @@ export class AgentLoop {
           this.app,
           tc.name!,
           tc.input!,
-          callbacks.onAskUser
+          callbacks.onAskUser,
+          scope
         );
 
         if (isStopped()) return;
