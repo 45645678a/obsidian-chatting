@@ -127,7 +127,7 @@ export default class ChatPlugin extends Plugin {
     // Editor command: chat about selected text (conditional, only when text is selected)
     this.addCommand({
       id: "send-selection",
-      name: "Send selection to Chat",
+      name: "Send selection to chat",
       editorCheckCallback: (checking: boolean, editor: Editor, ctx: MarkdownFileInfo) => {
         const sel = editor.getSelection();
         if (!sel || sel.length === 0) return false;
@@ -160,7 +160,7 @@ export default class ChatPlugin extends Plugin {
         if (sel && sel.length > 0) {
           menu.addItem((item) =>
             item
-              .setTitle("Send selection to Chat")
+              .setTitle("Send selection to chat")
               .setIcon("message-circle")
               .onClick(() => {
                 const scope: SelectionScope = { text: sel, filePath: info.file?.path ?? "" };
