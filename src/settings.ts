@@ -215,8 +215,9 @@ export class ChatSettingTab extends PluginSettingTab {
           button.setDisabled(true);
           try {
             const { sendMessage } = await import("./api/client");
+            // No web search: the test answers quickly, whatever the chat uses.
             const response = await sendMessage(
-              s,
+              { ...s, enableWebSearch: false },
               [{ role: "user", content: "Say hello in one word." }],
               [],
               "You are a test. Respond with one word."
@@ -289,8 +290,9 @@ export class ChatSettingTab extends PluginSettingTab {
             button.setDisabled(true);
             try {
               const { sendMessage } = await import("./api/client");
+              // No web search: the test answers quickly, whatever the chat uses.
               const response = await sendMessage(
-                this.plugin.settings,
+                { ...this.plugin.settings, enableWebSearch: false },
                 [{ role: "user", content: "Say hello in one word." }],
                 [],
                 "You are a test. Respond with one word."

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, beforeEach, afterEach } from 'node:test';
-import { api, settings } from './harness.mjs';
+import { api, response, settings, text, transport } from './harness.mjs';
 
 // A settings row as Obsidian hands it to a definition's render(); records its controls.
 function row() {
@@ -16,6 +16,7 @@ function row() {
     type(v) { c().value = v; return c().change?.(v); },
     async leave() { c().listeners.change?.(); await new Promise(setImmediate); },
   }));
+  r.addButton = add(c => ({ setButtonText(label) { c().label = label; return c(); }, setDisabled() { return c(); }, onClick(f) { c().click = f; return c(); } }));
   return r;
 }
 
@@ -126,4 +127,15 @@ test('Settings load: the iteration limit from data.json stays within 1 to 100; b
     await plugin.loadSettings();
     assert.equal(plugin.settings.maxIterations, loaded, String(saved));
   }
+});
+
+test('Settings: the connection Test asks without web search; the setting stays on', async () => {
+  const { plugin, render } = settingsTab('openai');
+  plugin.settings.apiKey = 'fake-test-key';
+  const requests = transport((body, index) => response('openai', [text('Hello')], 'end_turn', index));
+  const testButton = render('API key').controls.find(c => c.label === 'Test');
+  await testButton.click();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].tools, undefined);
+  assert.equal(plugin.settings.enableWebSearch, true);
 });
