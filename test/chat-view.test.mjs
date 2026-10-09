@@ -182,3 +182,24 @@ for (const action of ['Stop', 'Clear']) {
     ]);
   });
 }
+
+test('Copy transcript: refused while the conversation is empty, else its Markdown, also with the chat panel closed', async () => {
+  const { plugin, view } = await chatSetup('anthropic');
+  answering('anthropic');
+  // No chat view open.
+  plugin.app.workspace.getLeavesOfType = () => [];
+  const copied = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: { clipboard: { writeText: async value => { copied.push(value); } } } });
+  try {
+    plugin.shareTranscript();
+    assert.deepEqual(globalThis.__notices, ['Conversation is empty.']);
+    assert.deepEqual(copied, []);
+    await view.handleUserMessage('Question', null);
+    plugin.shareTranscript();
+    await until(() => globalThis.__notices.at(-1) === 'Transcript copied to clipboard.');
+    assert.match(copied[0], /## Conversation\n\n### User\n\n[\s\S]*Question\n\n### Assistant\n\nA1/);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'navigator', previous); else delete globalThis.navigator;
+  }
+});

@@ -152,11 +152,6 @@ export class ObsidianChatView extends ItemView {
     }
   }
 
-  /** Export the full transcript for debugging */
-  getTranscript(): string {
-    return this.plugin.agent.exportTranscript();
-  }
-
   /** Programmatically send a message */
   sendMessage(text: string): void {
     void this.handleUserMessage(text, this.chatContainer?.getSelection() ?? null);
