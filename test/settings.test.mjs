@@ -116,3 +116,14 @@ test('Settings before Obsidian 1.13: display() shows the custom model ID row onl
   await dropdown.change('__custom__');
   assert.equal(shown.length, 1);
 });
+
+test('Settings load: the iteration limit from data.json stays within 1 to 100; below 1 is the default', async () => {
+  // Whole numbers as the settings field reads them (parseInt); 0 meant the default before.
+  for (const [saved, loaded] of [[1000, 100], [100, 100], [1, 1], [0, 20], [0.5, 20], [-5, 20], [7.6, 7], [Infinity, 20], [NaN, 20], ['50', 20], [42, 42]]) {
+    const plugin = new api.ChatPlugin();
+    plugin.app = { secretStorage: { getSecret: () => '' } };
+    plugin.loadData = async () => ({ maxIterations: saved });
+    await plugin.loadSettings();
+    assert.equal(plugin.settings.maxIterations, loaded, String(saved));
+  }
+});
