@@ -157,3 +157,45 @@ test('Device-code polling survives network errors and stops when the code expire
     await assert.rejects(oauth.pollDeviceAuthorization(authorization).promise, /polling failed: HTTP 500/);
   } finally { globalThis.window = previousWindow; }
 });
+
+test('The device-login dialog ignores clicks on the dimmed background; Escape still cancels the login', () => {
+  // Obsidian's Modal.close() calls onClose(); the test Modal has no close().
+  const ModalBase = Object.getPrototypeOf(api.ChatGPTDeviceLoginModal.prototype);
+  ModalBase.close = function () { this.closed = true; this.onClose(); };
+  const previousWindow = globalThis.window;
+  const timers = [];
+  globalThis.window = { setTimeout: fn => timers.push(fn) };
+  try {
+    const open = () => {
+      const handle = { promise: new Promise(() => {}), cancels: 0, cancel() { handle.cancels++; } };
+      const authorization = { deviceAuthId: 'fake-device', userCode: 'ABCD-1234', verificationUri: 'https://auth.openai.com/codex/device', intervalMs: 5000 };
+      const modal = new api.ChatGPTDeviceLoginModal({}, authorization, handle, () => {});
+      const background = {};
+      modal.containerEl = { querySelector: selector => selector === '.modal-bg' ? { addEventListener: (type, fn, options) => { background[type] = fn; background.capture = options?.capture; } } : null };
+      modal.contentEl = { empty() {} };
+      modal.ignoreBackgroundClicks();
+      assert.equal(background.capture, true);
+      return { modal, handle, press: () => background.pointerdown() };
+    };
+
+    // A click on the background: Obsidian asks to close, the dialog stays and keeps polling.
+    let { modal, handle, press } = open();
+    press(); modal.close();
+    assert.equal(modal.closed, undefined);
+    assert.equal(handle.cancels, 0);
+    // Escape or the close button: closes and cancels the poll.
+    modal.close();
+    assert.equal(modal.closed, true);
+    assert.equal(handle.cancels, 1);
+
+    // A press that didn't turn into a close request doesn't swallow a later Escape.
+    ({ modal, handle, press } = open());
+    press(); timers.at(-1)();
+    modal.close();
+    assert.equal(modal.closed, true);
+    assert.equal(handle.cancels, 1);
+  } finally {
+    globalThis.window = previousWindow;
+    delete ModalBase.close;
+  }
+});
