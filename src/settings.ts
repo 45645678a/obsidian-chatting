@@ -1,10 +1,12 @@
 import { App, Modal, Notice, PluginSettingTab, Setting, requireApiVersion, type SettingDefinitionItem } from "obsidian";
 import type ChatPlugin from "./main";
 import type { Provider } from "./types";
-import { CHATGPT_OAUTH_DEFAULT_MODEL, DEFAULT_PROVIDER_MODELS } from "./types";
+import { DEFAULT_PROVIDER_MODELS } from "./types";
 import type { ChatGPTDeviceAuthorization, PollHandle } from "./auth/chatgptOAuth";
 
 import { type ModelOption, type CatalogState, catalogIdentity, cachedCatalog, refreshCatalog, getCatalogModels, clearCatalogModels, CATALOG_TTL } from "./api/model-catalog";
+
+const CUSTOM_MODEL_OPTION = "__custom__";
 
 const FALLBACK_MODELS: Record<string, ModelOption[]> = {
   anthropic: [
@@ -46,6 +48,8 @@ export class ChatSettingTab extends PluginSettingTab {
   private apiKeyTimer?: number;
   /** Set while the tab is closed, so pending redraws (timers, model list loads) skip it. */
   private hidden = false;
+  /** "Custom..." is picked in the model dropdown: show the model ID field. */
+  private editingCustomModel = false;
 
   constructor(app: App, plugin: ChatPlugin) {
     super(app, plugin);
@@ -55,6 +59,7 @@ export class ChatSettingTab extends PluginSettingTab {
   hide(): void {
     super.hide();
     this.hidden = true;
+    this.editingCustomModel = false;
   }
 
   // Obsidian 1.13+ indexes these definitions; older versions retain display().
@@ -65,10 +70,12 @@ export class ChatSettingTab extends PluginSettingTab {
       { name: "Provider", render: setting => this.renderProvider(setting) },
       { name: "API key", visible: () => this.plugin.settings.provider !== "chatgpt-oauth", render: setting => this.renderApiKeySection(setting.settingEl.parentElement!, setting) },
       { name: "ChatGPT account", visible: () => this.plugin.settings.provider === "chatgpt-oauth", render: setting => this.renderChatGPTOAuthSection(setting.settingEl.parentElement!, setting) },
-      { name: "Model", aliases: ["Custom model ID", "Refresh models"], render: setting => {
+      { name: "Model", aliases: ["Refresh models"], render: setting => {
         this.renderModelSection(setting.settingEl.parentElement!, setting);
         void this.loadCatalog(false);
       } },
+      // Its own definition: a row added next to another definition's row doesn't show.
+      { name: "Custom model ID", visible: () => this.editingCustomModel, render: setting => this.renderCustomModel(setting) },
       { name: "Web search", render: setting => this.renderWebSearch(setting) },
       { name: "Max tool iterations", render: setting => this.renderMaxIterations(setting) },
     ];
@@ -97,6 +104,7 @@ export class ChatSettingTab extends PluginSettingTab {
 
     // ─── Model ────────────────────────────────────────────────────────
     this.renderModelSection(containerEl);
+    if (this.editingCustomModel) this.renderCustomModel(new Setting(containerEl));
     void this.loadCatalog(false);
 
     this.renderWebSearch(new Setting(containerEl));
@@ -123,6 +131,7 @@ export class ChatSettingTab extends PluginSettingTab {
             this.catalogIdentity = "";
             s.provider = value as Provider;
             s.model = DEFAULT_PROVIDER_MODELS[s.provider];
+            this.editingCustomModel = false;
             this.plugin.reloadApiKeyForProvider();
             await this.plugin.saveSettings();
             window.setTimeout(() => this.refreshSettingsTab(), 10);
@@ -337,23 +346,26 @@ export class ChatSettingTab extends PluginSettingTab {
         for (const m of models) {
           dropdown.addOption(m.value, m.label);
         }
-        dropdown.addOption("__custom__", "Custom...");
+        dropdown.addOption(CUSTOM_MODEL_OPTION, "Custom...");
 
         // If current model isn't in the list, add it
         if (s.model && !models.some((m) => m.value === s.model)) {
           dropdown.addOption(s.model, `${s.model} (current)`);
         }
 
-        dropdown.setValue(s.model || models[0]?.value || "");
+        dropdown.setValue(this.editingCustomModel ? CUSTOM_MODEL_OPTION : s.model || models[0]?.value || "");
         dropdown.onChange(async (value) => {
-          if (value === "__custom__") {
-            s.model = "";
-            await this.plugin.saveSettings();
+          if (value === CUSTOM_MODEL_OPTION) {
+            // UI state only: the model changes once an ID is typed.
+            this.editingCustomModel = true;
             window.setTimeout(() => this.refreshSettingsTab(), 10);
-          } else {
-            s.model = value;
-            await this.plugin.saveSettings();
+            return;
           }
+          const wasEditing = this.editingCustomModel;
+          this.editingCustomModel = false;
+          s.model = value;
+          await this.plugin.saveSettings();
+          if (wasEditing) window.setTimeout(() => this.refreshSettingsTab(), 10);
         });
       });
 
@@ -364,28 +376,25 @@ export class ChatSettingTab extends PluginSettingTab {
           await this.loadCatalog(true);
         }));
     }
+  }
 
-    // Custom model text field (shown when Custom... selected or model is empty)
-    if (!s.model) {
-      new Setting(containerEl)
-        .setName("Custom model ID")
-        .setDesc("Enter the full model identifier")
-        .addText((text) =>
-          text
-            .setPlaceholder(
-              s.provider === "anthropic"
-                ? "claude-sonnet-4-20250514"
-                : s.provider === "chatgpt-oauth"
-                  ? CHATGPT_OAUTH_DEFAULT_MODEL
-                  : "gpt-4o",
-            )
-            .setValue(s.model)
-            .onChange(async (value) => {
-              s.model = value.trim();
-              await this.plugin.saveSettings();
-            })
-        );
-    }
+  /** Custom model text field (while "Custom..." is picked); an empty ID is never saved. */
+  private renderCustomModel(setting: Setting): void {
+    const s = this.plugin.settings;
+    setting
+      .setName("Custom model ID")
+      .setDesc("Enter the full model identifier")
+      .addText((text) => {
+        text.setPlaceholder(DEFAULT_PROVIDER_MODELS[s.provider]).setValue(s.model);
+        // Saved when the field is left or Enter is pressed, not per keystroke:
+        // deleting an ID key by key would save each shorter ID as the model.
+        text.inputEl.addEventListener("change", () => {
+          const id = text.getValue().trim();
+          if (!id) return;
+          s.model = id;
+          void this.plugin.saveSettings();
+        });
+      });
   }
   private credentialIdentity(): string {
     const s = this.plugin.settings;
