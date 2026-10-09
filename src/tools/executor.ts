@@ -464,7 +464,9 @@ function getCurrentDatetime(): ToolResult {
     second: "2-digit",
     timeZoneName: "short",
   });
-  const dateOnly = now.toISOString().split("T")[0]; // YYYY-MM-DD for daily notes
+  // YYYY-MM-DD in the user's time zone, as daily notes are named.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const dateOnly = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
   return {
     result: `Local: ${local}\nISO: ${iso}\nDate: ${dateOnly}`,
