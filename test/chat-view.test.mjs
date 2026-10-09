@@ -245,3 +245,20 @@ test('A view whose UI fails to mount is still ready, so commands waiting for it 
   assert.equal(requests.length, 0);
   assert.deepEqual(globalThis.__notices, ["The chat panel couldn't be shown, so the message wasn't sent."]);
 });
+
+// Passes before this change too: it guards the refactor that made Clear
+// stop the turn through AgentLoop.clear() alone.
+test('Clear stops a running turn on its own; the stopped turn adds nothing', async () => {
+  const { plugin, view, chat } = await chatSetup('anthropic');
+  let answer;
+  const requests = transport(() => new Promise(resolve => { answer = resolve; }));
+  const running = view.handleUserMessage('Q1', null);
+  await until(() => answer);
+  view.clearConversation();
+  answer(response('anthropic', [call('r', 'read_file', { path: 'Untitled.md' })], 'tool_use'));
+  await running;
+  assert.equal(requests.length, 1);
+  assert.equal(plugin.agent.isEmpty(), true);
+  assert.deepEqual(plugin.chatHistory, []);
+  assert.deepEqual(chat.shown, []);
+});

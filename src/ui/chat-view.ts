@@ -284,7 +284,6 @@ export class ObsidianChatView extends ItemView {
   }
 
   private handleClear(): void {
-    this.plugin.agent.abort();
     this.plugin.agent.clear();
     this.plugin.chatHistory = [];
     this.chatContainer?.clearMessages();

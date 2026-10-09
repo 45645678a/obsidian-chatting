@@ -55,7 +55,7 @@ export class AgentLoop {
   private messages: UnifiedMessage[] = [];
   private app: App;
   private settings: ChatSettings;
-  private aborted = false;
+  /** Counts runs and stops; a run whose number is no longer current is stopped. */
   private runVersion = 0;
 
   constructor(app: App, settings: ChatSettings) {
@@ -65,15 +65,13 @@ export class AgentLoop {
 
   /** Abort a running loop (e.g. user navigates away) */
   abort(): void {
-    this.aborted = true;
     this.runVersion++;
   }
 
-  /** Clear conversation history */
+  /** Stop a running turn and clear the history. */
   clear(): void {
-    this.runVersion++;
+    this.abort();
     this.messages = [];
-    this.aborted = false;
     clearOpenAIState();
     clearChatGPTOAuthState();
   }
@@ -162,9 +160,8 @@ export class AgentLoop {
     selection?: SelectionScope | null,
     images: ImageAttachment[] = []
   ): Promise<void> {
-    this.aborted = false;
     const version = ++this.runVersion;
-    const isStopped = () => this.aborted || version !== this.runVersion;
+    const isStopped = () => version !== this.runVersion;
     // Keep one provider/model/credential configuration for this entire turn.
     const turnSettings = { ...this.settings };
 
