@@ -95,7 +95,6 @@ export interface UnifiedResponse {
 
 export interface ConversationContext {
   activeFile: string | null;
-  activeFileContent: string | null;
   selection: string | null;
   vaultName: string;
   fileCount: number;
