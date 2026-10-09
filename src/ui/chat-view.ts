@@ -59,6 +59,7 @@ interface ChatContainerApi extends Record<string, unknown> {
   showThinking(): void;
   hideThinking(): void;
   showAskUser(question: string): Promise<string>;
+  cancelAskUser(): void;
   setInputEnabled(enabled: boolean): void;
   clearMessages(): void;
   focus(): void;
@@ -229,6 +230,8 @@ export class ObsidianChatView extends ItemView {
           // the history so they are still there after a reload.
           history.push({ type: "assistant", text: question });
           const answer = await chat.showAskUser(question);
+          // Empty: Stop or Clear dropped the question.
+          if (!answer) return answer;
           history.push({ type: "user", text: answer });
           chat.setInputEnabled(false);
           return answer;
@@ -257,6 +260,8 @@ export class ObsidianChatView extends ItemView {
     this.running = false;
     const chat = this.chatContainer;
     if (chat) {
+      // Otherwise the next message would answer the stopped turn's question.
+      chat.cancelAskUser();
       chat.hideThinking();
       chat.setInputEnabled(true);
       chat.focus();
@@ -269,6 +274,7 @@ export class ObsidianChatView extends ItemView {
     this.plugin.agent.clear();
     this.plugin.chatHistory = [];
     this.chatContainer?.clearMessages();
+    this.chatContainer?.cancelAskUser();
     this.running = false;
     this.chatContainer?.setInputEnabled(true);
     // Clear persisted state

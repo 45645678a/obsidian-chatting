@@ -23,6 +23,7 @@ function fakeChat() {
     addError(value) { chat.shown.push({ id: nextId++, type: 'error', text: value }); },
     showThinking() {}, hideThinking() {},
     showAskUser(question) { chat.addAssistantMessage(question); return new Promise(resolve => { chat.askUser = resolve; }); },
+    cancelAskUser() { const resolve = chat.askUser; chat.askUser = null; resolve?.(''); },
     setInputEnabled() {}, clearMessages() { chat.shown = []; }, focus() {}, setModel() {},
     setSelection() {}, getSelection: () => null,
   };
@@ -154,3 +155,30 @@ test('An ask_user question and its answer stay in the chat history across a relo
   const restored = await chatSetup('anthropic', JSON.parse(JSON.stringify(writes[0])));
   assert.deepEqual(restored.plugin.chatHistory.map(e => [e.type, e.text]), shown);
 });
+
+for (const action of ['Stop', 'Clear']) {
+  test(`${action} while ask_user waits drops the question: the next message starts a new turn`, async () => {
+    const { plugin, view, chat } = await chatSetup('anthropic');
+    const requests = transport((body, index) => index === 0
+      ? response('anthropic', [call('ask', 'ask_user', { question: 'Which note?' })], 'tool_use')
+      : response('anthropic', [text('A2')]));
+    const asking = view.handleUserMessage('Q1', null);
+    await until(() => chat.askUser);
+
+    if (action === 'Stop') view.handleStop(); else view.clearConversation();
+    // No answer is pending, so typed text is sent as a new message.
+    assert.equal(chat.askUser, null);
+    await asking;
+    assert.equal(view.running, false);
+    await view.handleUserMessage('Q2', null);
+    assert.equal(requests.length, 2);
+    const sent = JSON.stringify(requests[1].messages);
+    assert.equal(sent.includes('Q1'), action === 'Stop');
+    // A stopped call keeps its cancelled result, so the history stays valid.
+    assert.equal(sent.includes('Tool execution cancelled before completion.'), action === 'Stop');
+    assert.deepEqual(plugin.chatHistory.map(e => [e.type, e.text]), [
+      ...(action === 'Stop' ? [['user', 'Q1'], ['assistant', 'Which note?']] : []),
+      ['user', 'Q2'], ['assistant', 'A2'],
+    ]);
+  });
+}

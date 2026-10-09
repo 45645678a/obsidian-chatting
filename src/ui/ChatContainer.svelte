@@ -120,6 +120,13 @@
     });
   }
 
+  /** Drop a pending ask_user question (its turn was stopped or cleared). */
+  export function cancelAskUser(): void {
+    const resolve = askUserResolve;
+    askUserResolve = null;
+    resolve?.("");
+  }
+
   export function setInputEnabled(enabled: boolean): void {
     inputEnabled = enabled;
     placeholder = enabled ? "Ask anything..." : "Waiting for response...";
