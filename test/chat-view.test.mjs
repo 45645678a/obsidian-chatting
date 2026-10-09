@@ -134,3 +134,23 @@ test('Tool cards keep their (capped) input across a reload', async () => {
   const restored = await chatSetup('anthropic', JSON.parse(JSON.stringify(writes[0])));
   assert.deepEqual(restored.plugin.chatHistory.find(e => e.type === 'tool-result').toolInput, card.toolInput);
 });
+
+test('An ask_user question and its answer stay in the chat history across a reload', async () => {
+  const { plugin, view, chat, writes } = await chatSetup('anthropic');
+  const requests = transport((body, index) => index === 0
+    ? response('anthropic', [call('ask', 'ask_user', { question: 'Which note?' })], 'tool_use')
+    : response('anthropic', [text(`A${index + 1}`)]));
+  const asking = view.handleUserMessage('Q1', null);
+  await until(() => chat.askUser);
+  chat.addUserMessage('The plan');
+  chat.askUser('The plan');
+  await asking;
+  assert.equal(requests.length, 2);
+  const shown = [['user', 'Q1'], ['assistant', 'Which note?'], ['user', 'The plan'], ['assistant', 'A2']];
+  assert.deepEqual(chat.shown.map(m => [m.type, m.text]), shown);
+  assert.deepEqual(plugin.chatHistory.map(e => [e.type, e.text]), shown);
+
+  await until(() => writes.length === 1);
+  const restored = await chatSetup('anthropic', JSON.parse(JSON.stringify(writes[0])));
+  assert.deepEqual(restored.plugin.chatHistory.map(e => [e.type, e.text]), shown);
+});

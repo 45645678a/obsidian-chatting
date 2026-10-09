@@ -225,7 +225,11 @@ export class ObsidianChatView extends ItemView {
         onAskUser: async (question) => {
           chat.hideThinking();
           chat.setInputEnabled(true);
+          // The chat shows the question and the typed answer; keep both in
+          // the history so they are still there after a reload.
+          history.push({ type: "assistant", text: question });
           const answer = await chat.showAskUser(question);
+          history.push({ type: "user", text: answer });
           chat.setInputEnabled(false);
           return answer;
         },
