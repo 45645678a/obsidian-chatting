@@ -8,6 +8,38 @@ import { getModelDisplayName } from "../settings";
 
 export const VIEW_TYPE_CHAT = "ochatting-view";
 
+const SAVED_INPUT_TEXT = 300;
+const SAVED_INPUT_ITEMS = 10;
+const SAVED_INPUT_KEYS = 20;
+
+/**
+ * A tool call's input as saved with its card, for display only: strings
+ * cut to 300 characters, lists to 10 items and objects to 20 keys, so long
+ * note content or canvas lists don't bloat `chat-state.json`.
+ */
+function savedToolInput(input: Record<string, unknown>): Record<string, unknown> {
+  const cap = (value: unknown): unknown => {
+    if (typeof value === "string") {
+      if (value.length <= SAVED_INPUT_TEXT) return value;
+      // Don't keep the first half of a surrogate pair (e.g. an emoji).
+      const end = /[\uD800-\uDBFF]/.test(value[SAVED_INPUT_TEXT - 1]) ? SAVED_INPUT_TEXT - 1 : SAVED_INPUT_TEXT;
+      return `${value.slice(0, end)}... (${value.length} characters)`;
+    }
+    if (Array.isArray(value)) {
+      const items = value.slice(0, SAVED_INPUT_ITEMS).map(cap);
+      return value.length > SAVED_INPUT_ITEMS ? [...items, `... (${value.length - SAVED_INPUT_ITEMS} more)`] : items;
+    }
+    if (typeof value === "object" && value !== null) {
+      const entries = Object.entries(value);
+      const kept = Object.fromEntries(entries.slice(0, SAVED_INPUT_KEYS).map(([key, item]) => [key, cap(item)]));
+      if (entries.length > SAVED_INPUT_KEYS) kept["..."] = `(${entries.length - SAVED_INPUT_KEYS} more)`;
+      return kept;
+    }
+    return value;
+  };
+  return cap(input) as Record<string, unknown>;
+}
+
 interface ChatContainerProps {
   app: App;
   component: ObsidianChatView;
@@ -167,7 +199,7 @@ export class ObsidianChatView extends ItemView {
     history.push({ type: "user", text, images });
     chat.setInputEnabled(false);
 
-    const toolCallIds = new Map<string, number>();
+    const toolCalls = new Map<string, { id: number; input: Record<string, unknown> }>();
 
     try {
       await this.plugin.agent.run(text, {
@@ -177,16 +209,13 @@ export class ObsidianChatView extends ItemView {
         onToolCall: (name, input) => {
           chat.hideThinking();
           if (name === "ask_user") return;
-          const msgId = chat.addToolCall(name, input);
-          toolCallIds.set(`latest-${name}`, msgId);
+          toolCalls.set(name, { id: chat.addToolCall(name, input), input });
         },
         onToolResult: (name, result: ToolResult) => {
           if (name === "ask_user") return;
-          const msgId = toolCallIds.get(`latest-${name}`);
-          if (msgId !== undefined) {
-            chat.updateToolResult(msgId, name, result);
-          }
-          history.push({ type: "tool-result", toolName: name, toolInput: {}, toolResult: result });
+          const call = toolCalls.get(name);
+          if (call) chat.updateToolResult(call.id, name, result);
+          history.push({ type: "tool-result", toolName: name, toolInput: savedToolInput(call?.input ?? {}), toolResult: result });
         },
         onResponse: (text) => {
           chat.hideThinking();

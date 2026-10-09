@@ -420,6 +420,12 @@
             </span>
             <span class="ochatting-tool-name">{formatToolName(msg.toolName ?? "")}</span>
           </div>
+          {#if msg.toolInput && Object.keys(msg.toolInput).length > 0}
+            <details class="ochatting-tool-details">
+              <summary>Parameters</summary>
+              <pre class="ochatting-tool-json">{truncate(JSON.stringify(msg.toolInput, null, 2), 2000)}</pre>
+            </details>
+          {/if}
           <details class="ochatting-tool-details">
             <summary>{msg.toolResult?.isError ? "Error" : "Result"}</summary>
             <pre class="ochatting-tool-json">{truncate(msg.toolResult?.result ?? "", 2000)}</pre>

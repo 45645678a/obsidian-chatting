@@ -3,7 +3,7 @@
 // commands waiting for the view.
 import assert from 'node:assert/strict';
 import { test, beforeEach } from 'node:test';
-import { api, settings, text, image, response, transport, vaultApp, callbacks } from './harness.mjs';
+import { api, settings, text, call, image, response, transport, vaultApp, callbacks } from './harness.mjs';
 
 beforeEach(() => {
   api.clearOpenAIState();
@@ -107,4 +107,30 @@ test('OpenAI keeps chaining once the history is past 80 messages: it is cut ever
   assert.equal(requests[1].previous_response_id, 'resp_0');
   assert.equal(requests[2].previous_response_id, 'resp_1');
   assert.equal(requests[2].input.length, 1);
+});
+
+test('Tool cards keep their (capped) input across a reload', async () => {
+  const { plugin, view, writes } = await chatSetup('anthropic');
+  const keys = Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`k${i}`, i]));
+  const note = `${'x'.repeat(299)}\u{1F600}${'y'.repeat(700)}`;
+  const input = { path: 'Untitled.md', note, lines: Array.from({ length: 15 }, (_, i) => i), nested: { list: ['a'] }, keys };
+  transport((body, index) => index === 0
+    ? response('anthropic', [call('r', 'read_file', input)], 'tool_use')
+    : response('anthropic', [text('Read it')]));
+  await view.handleUserMessage('Read the note', null);
+  const card = plugin.chatHistory.find(e => e.type === 'tool-result');
+  assert.equal(card.toolInput.path, 'Untitled.md');
+  // Cut before the emoji, not through it.
+  assert.equal(card.toolInput.note, `${'x'.repeat(299)}... (1001 characters)`);
+  assert.deepEqual(card.toolInput.lines, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, '... (5 more)']);
+  assert.deepEqual(card.toolInput.nested, { list: ['a'] });
+  assert.equal(Object.keys(card.toolInput.keys).length, 21);
+  assert.equal(card.toolInput.keys.k19, 19);
+  assert.equal(card.toolInput.keys['...'], '(5 more)');
+  // The API history keeps the full input.
+  assert.equal(plugin.agent.exportMessages()[1].content[0].input.note, note);
+
+  await until(() => writes.length === 1);
+  const restored = await chatSetup('anthropic', JSON.parse(JSON.stringify(writes[0])));
+  assert.deepEqual(restored.plugin.chatHistory.find(e => e.type === 'tool-result').toolInput, card.toolInput);
 });
