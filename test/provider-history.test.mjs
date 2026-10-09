@@ -544,6 +544,16 @@ test('OAuth catalog refuses to associate a new account credential with an old ca
   await assert.rejects(api.refreshCatalog(state,'chatgpt-oauth',identity,'',{getUsableCredential:async()=>({accessToken:'fake',accountId:'new-account'})},true),/account changed/);
   assert.deepEqual(state.entries,[]);
 });
+test('ChatGPT: citation markers (private-use characters) are left out of the shown answer, kept in the replay', async () => {
+  const marked = 'A balanced pile smells earthy. \uE200cite\uE202turn0search0\uE201\n\nTurn it \uE202weekly.\uE200cite\uE202turn0search1\uE201';
+  transport(() => response('chatgpt-oauth', [text(marked)]));
+  const cb = callbacks();
+  const agent = new api.AgentLoop(vaultApp().app, settings('chatgpt-oauth'));
+  await agent.run('Compost?', cb);
+  assert.deepEqual(cb.errors, []);
+  assert.deepEqual(cb.texts, ['A balanced pile smells earthy.\n\nTurn it weekly.']);
+  assert.match(JSON.stringify(agent.exportMessages().at(-1).replay.items), /turn0search0/);
+});
 test('Stopping during rate-limit backoff prevents the retried network request', async () => {
   let stopped=false,requests=0;
   const previousWindow=globalThis.window;
