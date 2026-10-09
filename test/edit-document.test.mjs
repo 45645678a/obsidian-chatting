@@ -1,5 +1,6 @@
 // edit_document against the real executor: a missing `content` must not
-// blank or cut the note.
+// blank or cut the note, inserts land where asked, and every write goes
+// through vault.process().
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { api } from './harness.mjs';
@@ -76,4 +77,12 @@ test('insert at the beginning and end; an unknown position is refused before the
   assert.equal(result.isError, true);
   assert.match(result.result, /Unknown position: middle/);
   assert.equal(processed, false);
+});
+
+test('replace_all writes through vault.process(), not vault.modify()', async () => {
+  const { app, files } = noteVault('old text');
+  app.vault.modify = async () => { throw new Error('vault.modify() used'); };
+  const result = await run(app, { operation: 'replace_all', content: 'new text' });
+  assert.equal(result.isError, false);
+  assert.equal(files.get('Note.md'), 'new text');
 });

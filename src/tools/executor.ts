@@ -134,7 +134,7 @@ async function editDocument(
 
   switch (operation) {
     case "replace_all":
-      await app.vault.modify(file, content);
+      await app.vault.process(file, () => content);
       return { result: `Replaced all content in ${file.path}.`, isError: false };
 
     case "find_replace": {
