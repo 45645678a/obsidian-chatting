@@ -10,28 +10,31 @@ Runs every `test/*.test.mjs` file (`scripts/test.mjs`). `test/harness.mjs`
 bundles the production modules (provider adapters, agent loop, plugin) with
 a fake Obsidian API, an in-memory vault and mocked `requestUrl`; test files
 import what they need from it. No credentials or live API calls are needed.
-Tests cover assistant output encoding, native thinking/reasoning/search replay,
-read → create/edit flows, parallel tools, cancellation, history restoration,
-Anthropic `pause_turn` and thinking configuration, OpenAI conversation
-isolation, and the vault tools: `edit_document` input checks and insert
-positions, `set_properties` input checks, `read_file` and `read_document`
-refusing binary files, the local date from `get_current_datetime`, and
-quoting of a multi-line selection. `chat-view.test.mjs` drives the chat
-view and the plugin's commands with a fake Svelte component: the API
-history cap (80 messages saved, cut to 60 past 80) and OpenAI chaining past
-it, tool card inputs and `ask_user` questions and answers after a reload,
-Stop and Clear while `ask_user` waits, Copy transcript with the chat panel
-closed, commands waiting for the view, and Clear during a turn.
-`settings-tab.test.mjs` checks that a closed settings tab is not redrawn.
-Providers: rate-limit retries by HTTP status, error code and the wait the
-provider names (`provider-errors.test.mjs`), Anthropic web search in its
-documented response shape with the cited sources
+Tests cover assistant output encoding, native thinking/reasoning/search
+replay, read → create/edit flows, parallel tools, cancellation, history
+restoration, Anthropic `pause_turn` and thinking configuration, OpenAI
+conversation isolation, and the vault tools: `edit_document` input checks
+and insert positions, `set_properties` input checks, `read_file` and
+`read_document` refusing binary files, the local date from
+`get_current_datetime`, and quoting of a multi-line selection.
+`chat-view.test.mjs` drives the chat view and the plugin's commands with a
+fake Svelte component: the API history cap (80 messages saved, cut to 60
+past 80) and OpenAI chaining past it, tool card inputs and `ask_user`
+questions and answers after a reload, Stop and Clear while `ask_user` waits,
+Copy transcript with the chat panel closed, commands waiting for the view,
+and Clear during a turn. `settings-tab.test.mjs` checks that a closed
+settings tab is not redrawn. Providers: rate-limit retries by HTTP status,
+error code and the wait the provider names (`provider-errors.test.mjs`),
+Anthropic web search in its documented response shape with the cited sources
 (`anthropic-web-search.test.mjs`), and the OpenAI model list
 (`model-list.test.mjs`). Settings (`settings.test.mjs`): "Custom..." in the
-model dropdown (for `display()`, before Obsidian 1.13, only that it adds
-the custom model row), the iteration limit loaded from `data.json`, and the
-connection Test without web search. These tests do not establish
-live-service or physical-iOS behavior.
+model dropdown (for `display()`, before Obsidian 1.13, only that it adds the
+custom model row), the iteration limit loaded from `data.json`, and the
+connection Test without web search. `chatgpt-signin.test.mjs`: the ChatGPT
+sign-in (shared token refreshes that keep the refresh token and respect
+Disconnect, one refresh and retry after a 401, device-code polling through
+network errors, and the login dialog ignoring background clicks). These
+tests do not establish live-service or physical-iOS behavior.
 
 Two Node scripts that exercise the ChatGPT/Codex Responses endpoint
 **without** going through Obsidian, so iteration on the
