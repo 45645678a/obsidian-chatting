@@ -54,6 +54,8 @@ export class ChatSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: ChatPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+    // Scopes the wrapping rows in styles.css (several buttons on a phone).
+    this.containerEl.addClass("ochatting-settings");
   }
 
   hide(): void {
