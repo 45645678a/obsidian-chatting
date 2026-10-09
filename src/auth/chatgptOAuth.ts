@@ -62,7 +62,8 @@ interface IdTokenClaims {
 
 interface TokenResponse {
   access_token: string;
-  refresh_token: string;
+  /** A refresh answer may leave it out: the old refresh token stays valid. */
+  refresh_token?: string;
   expires_in?: number;
   id_token?: string;
 }
@@ -133,6 +134,9 @@ const describeError = (response: { status: number; text?: string; json?: unknown
 };
 
 export class ChatGPTOAuthService {
+  /** The refresh in flight; parallel requests share it. */
+  private refreshing: Promise<ChatGPTOAuthCredential> | null = null;
+
   constructor(private readonly store: ChatGPTOAuthStore) {}
 
   /** Synchronous read of the stored credential (whether or not it's expired). */
@@ -247,8 +251,22 @@ export class ChatGPTOAuthService {
 
   /**
    * Refresh an expiring credential. Stores the new credential on success.
+   * Parallel calls share one request: a refresh token may only be used once.
    */
-  async refreshCredential(
+  refreshCredential(
+    credential: Pick<ChatGPTOAuthCredential, "refreshToken" | "accountId">,
+  ): Promise<ChatGPTOAuthCredential> {
+    this.refreshing ??= this.refresh(credential).finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+
+  /**
+   * Disconnect or a new sign-in may replace the stored credential while the
+   * request runs: the result is then not stored, and the caller gets an error.
+   */
+  private async refresh(
     credential: Pick<ChatGPTOAuthCredential, "refreshToken" | "accountId">,
   ): Promise<ChatGPTOAuthCredential> {
     const response = await requestUrl({
@@ -266,6 +284,10 @@ export class ChatGPTOAuthService {
       throw: false,
     });
 
+    if (this.store.get()?.refreshToken !== credential.refreshToken) {
+      throw new ChatGPTOAuthError("The ChatGPT sign-in changed while the token was refreshed. Try again.");
+    }
+
     if (response.status < 200 || response.status >= 300) {
       throw new ChatGPTOAuthError(
         `ChatGPT token refresh failed: HTTP ${response.status}${describeError(response)}`,
@@ -273,7 +295,7 @@ export class ChatGPTOAuthService {
     }
 
     const data = response.json as TokenResponse;
-    const next = this.toCredential(data, credential.accountId);
+    const next = this.toCredential(data, credential.accountId, credential.refreshToken);
     this.store.set(next);
     return next;
   }
@@ -319,18 +341,28 @@ export class ChatGPTOAuthService {
       );
     }
 
-    return this.toCredential(response.json as TokenResponse);
+    return this.toCredential(response.json as TokenResponse | undefined);
   }
 
+  /**
+   * A refresh answer without a refresh token keeps `previousRefreshToken`.
+   * Without an access token (or any refresh token) it is an error: storing
+   * it would sign the user out silently.
+   */
   private toCredential(
-    tokens: TokenResponse,
+    tokens: TokenResponse | undefined,
     fallbackAccountId?: string,
+    previousRefreshToken?: string,
   ): ChatGPTOAuthCredential {
+    const refreshToken = tokens?.refresh_token || previousRefreshToken;
+    if (!tokens || typeof tokens.access_token !== "string" || !tokens.access_token || typeof refreshToken !== "string" || !refreshToken) {
+      throw new ChatGPTOAuthError("The ChatGPT token response is missing tokens.");
+    }
     const now = Date.now();
     const accountId = extractAccountId(tokens) ?? fallbackAccountId;
     return {
       accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
+      refreshToken,
       expiresAt: now + (tokens.expires_in ?? 3600) * 1000,
       updatedAt: now,
       ...(tokens.id_token ? { idToken: tokens.id_token } : {}),
