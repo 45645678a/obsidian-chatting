@@ -1,6 +1,21 @@
 import { App, TFile, getFrontMatterInfo, normalizePath } from "obsidian";
 import type { ToolResult } from "../types";
 
+/** Images the read tools refuse (SVG is text, so they read it). */
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif", "ico"];
+
+/**
+ * Files the read tools refuse because their text would be useless to the
+ * model. Best effort by extension: an unlisted binary file is still read.
+ */
+const BINARY_EXTENSIONS = [
+  "pdf", "epub", "zip", "gz", "tar", "7z", "rar", "jar", "iso", "dmg", "exe", "dll", "so", "dylib", "bin",
+  "mp3", "wav", "m4a", "ogg", "flac", "aac", "opus",
+  "webm", "mp4", "m4v", "mov", "mkv", "avi", "ogv", "3gp", "mpeg", "mpg",
+  "woff", "woff2", "ttf", "otf", "eot", "psd", "raw",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "sqlite", "db",
+];
+
 type AskUserCallback = (question: string) => Promise<string>;
 
 /**
@@ -78,6 +93,18 @@ async function ensureParentFolder(app: App, filePath: string): Promise<void> {
   }
 }
 
+/** An error for an image or binary file, whose text would be garbage; null for text. */
+function refuseNonText(file: TFile, tool: string): ToolResult | null {
+  const extension = file.extension.toLowerCase();
+  if (IMAGE_EXTENSIONS.includes(extension)) {
+    return { result: `${file.path} is an image; ${tool} reads text only. To show it, the user can attach it to a chat message.`, isError: true };
+  }
+  if (BINARY_EXTENSIONS.includes(extension)) {
+    return { result: `${file.path} is a binary file; ${tool} reads text only.`, isError: true };
+  }
+  return null;
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -106,6 +133,8 @@ async function readDocument(
   if (!file) {
     return { result: path ? `File not found: ${path}` : "No active document open.", isError: true };
   }
+  const refusal = refuseNonText(file, "read_document");
+  if (refusal) return refusal;
 
   // cachedRead() is faster for display-only reads
   const content = await app.vault.cachedRead(file);
@@ -254,6 +283,9 @@ async function readFile(
   if (!file) {
     return { result: `File not found: ${path}`, isError: true };
   }
+
+  const refusal = refuseNonText(file, "read_file");
+  if (refusal) return refusal;
 
   const content = await app.vault.cachedRead(file);
   return { result: content, isError: false };

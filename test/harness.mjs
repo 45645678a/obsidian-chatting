@@ -93,7 +93,7 @@ export function vaultApp() {
       configDir: '.obsidian', adapter: { append: async () => {} },
       getName: () => 'Test vault',
       getMarkdownFiles: () => [...files.keys()].map(path => ({ path })),
-      getFileByPath: path => files.has(path) ? { path } : null,
+      getFileByPath: path => files.has(path) ? { path, extension: path.slice(path.lastIndexOf('.') + 1) } : null,
       getFolderByPath: () => ({}),
       cachedRead: async file => files.get(file.path),
       create: async (path, content) => { assert.ok(!files.has(path)); files.set(path, content); return { path }; },

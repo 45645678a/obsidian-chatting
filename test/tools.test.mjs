@@ -1,5 +1,6 @@
-// Vault tools through the real executor: the date for daily notes and
-// set_properties input checks. Also how a selection scope reaches the model.
+// Vault tools through the real executor: the date for daily notes,
+// set_properties input checks and how read_file and read_document refuse
+// binary files. Also how a selection scope reaches the model.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { api, callbacks, response, settings, text, transport, vaultApp } from './harness.mjs';
@@ -60,4 +61,34 @@ test('set_properties refuses a list or a missing object and leaves the note alon
   const result = await run(app, 'set_properties', { path: 'Note.md', properties: { tags: ['a', 'b'], old: null } });
   assert.equal(result.isError, false);
   assert.deepEqual(frontmatter, { keep: 1, tags: ['a', 'b'] });
+});
+
+test('read_file and read_document refuse images and binary files, read text and SVG', async () => {
+  const textFiles = new Map([['Notes/Beta.md', '# Beta'], ['Pics/logo.svg', '<svg/>'], ['Data/notes.txt', 'plain']]);
+  const binary = ['Pics/cat.png', 'Pics/Photo.JPG', 'Pics/old.bmp', 'Docs/manual.pdf', 'Data/app.sqlite', 'Audio/memo.m4a'];
+  const binaryReads = [];
+  const app = {
+    workspace: { getActiveFile: () => null },
+    vault: {
+      getFileByPath: path => (textFiles.has(path) || binary.includes(path) ? { path, extension: path.slice(path.lastIndexOf('.') + 1) } : null),
+      cachedRead: async file => { if (!textFiles.has(file.path)) binaryReads.push(file.path); return textFiles.get(file.path); },
+    },
+  };
+  for (const tool of ['read_file', 'read_document']) {
+    for (const path of ['Pics/cat.png', 'Pics/Photo.JPG', 'Pics/old.bmp']) {
+      const result = await run(app, tool, { path });
+      assert.equal(result.isError, true, path);
+      assert.match(result.result, new RegExp(`is an image; ${tool} reads text only\\. To show it, the user can attach it to a chat message\\.$`));
+    }
+    for (const path of ['Docs/manual.pdf', 'Data/app.sqlite', 'Audio/memo.m4a']) {
+      const result = await run(app, tool, { path });
+      assert.equal(result.isError, true, path);
+      assert.match(result.result, new RegExp(`is a binary file; ${tool} reads text only\\.`));
+    }
+  }
+  for (const [path, content] of textFiles) {
+    assert.deepEqual(await run(app, 'read_file', { path }), { result: content, isError: false });
+    assert.deepEqual(await run(app, 'read_document', { path }), { result: `# ${path}\n\n${content}`, isError: false });
+  }
+  assert.deepEqual(binaryReads, []);
 });
