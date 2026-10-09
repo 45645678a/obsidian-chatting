@@ -18,11 +18,12 @@ export const bundled = await build({
     export { default as ChatPlugin } from './src/main';
     export { executeTool } from './src/tools/executor';
     export { TOOL_DEFINITIONS } from './src/tools/registry';
+    export { ObsidianChatView } from './src/ui/chat-view';
   `, resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, write: false, platform: 'node', format: 'esm',
   plugins: [{ name: 'obsidian-test-transport', setup(build) {
     build.onResolve({ filter: /^obsidian$/ }, () => ({ path: 'obsidian', namespace: 'test' }));
-    // The chat view's Svelte UI isn't under test; main.ts only needs it to import.
+    // The Svelte UI isn't bundled: chat view tests give the view a fake component.
     build.onResolve({ filter: /^svelte$|\.svelte$/ }, () => ({ path: 'svelte', namespace: 'test-svelte' }));
     build.onLoad({ filter: /.*/, namespace: 'test-svelte' }, () => ({ contents: 'export const mount = () => ({}); export const unmount = () => {}; export default {};', loader: 'js' }));
     build.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `

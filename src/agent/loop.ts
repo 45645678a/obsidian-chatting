@@ -16,8 +16,15 @@ import { buildContext } from "./context";
 import { buildSystemPrompt, buildContextMessage } from "./system-prompt";
 import { trimHistory } from "./history";
 
-const MAX_CONVERSATION_LENGTH = 50;
-const KEEP_RECENT = 40;
+/**
+ * The API history: saving keeps the last 80 messages. Before a turn, a
+ * history over 80 messages is cut to the last 60, so it is cut every few
+ * turns, not on each; in between it stays the same array and OpenAI can
+ * chain to its previous response. Both keep whole user turns, so they
+ * round up: a long turn can keep a few more messages.
+ */
+const MAX_CONVERSATION_LENGTH = 80;
+const KEEP_RECENT = 60;
 
 // Debug logging: writes transcript to the vault's plugin config folder
 const DEBUG = false;
@@ -72,13 +79,13 @@ export class AgentLoop {
   }
 
   /** Export API messages for persistence */
-  exportMessages(limit = 80): UnifiedMessage[] {
+  exportMessages(limit = MAX_CONVERSATION_LENGTH): UnifiedMessage[] {
     return trimHistory(this.messages, limit);
   }
 
-  /** Restore API messages from persistence */
+  /** Restore API messages from persistence, as many as saving keeps */
   importMessages(messages: UnifiedMessage[]): void {
-    this.messages = trimHistory(messages, KEEP_RECENT);
+    this.messages = trimHistory(messages, MAX_CONVERSATION_LENGTH);
     clearOpenAIState();
     clearChatGPTOAuthState();
   }
