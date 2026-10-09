@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { App, Component as ObsidianComponent } from "obsidian";
-  import { MarkdownRenderer, Notice } from "obsidian";
+  import type { App } from "obsidian";
+  import { Component as ObsidianComponent, MarkdownRenderer, Notice } from "obsidian";
   import type { ToolResult, SelectionScope, ImageAttachment } from "../types";
 
   const MAX_IMAGE_COUNT = 4;
@@ -349,18 +349,23 @@
     attachments = attachments.filter((image) => image.id !== id);
   }
 
-  // Render markdown into a DOM node using Obsidian's renderer
-  function renderMarkdown(node: HTMLElement, text: string): void {
-    node.empty();
-    MarkdownRenderer.render(app, text, node, "", component);
-  }
-
-  // Use action for markdown rendering
+  // Render markdown into a DOM node using Obsidian's renderer. Each render
+  // gets its own child component, unloaded when the text changes or the
+  // message goes away; with the view itself as the component, everything
+  // the renderer registers would stay loaded until the view closes.
   function markdown(node: HTMLElement, text: string) {
-    renderMarkdown(node, text);
+    let child: ObsidianComponent | null = null;
+    const render = (value: string) => {
+      if (child) component.removeChild(child);
+      child = component.addChild(new ObsidianComponent());
+      node.empty();
+      MarkdownRenderer.render(app, value, node, "", child);
+    };
+    render(text);
     return {
-      update(newText: string) {
-        renderMarkdown(node, newText);
+      update: render,
+      destroy() {
+        if (child) component.removeChild(child);
       },
     };
   }
