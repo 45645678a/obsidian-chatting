@@ -1,5 +1,6 @@
 import { catalogIdentity } from "./model-catalog";
 import { requestUrl } from "obsidian";
+import { ProviderError, retryAfterMs } from "./errors";
 import type {
   ChatSettings,
   UnifiedMessage,
@@ -110,7 +111,8 @@ export async function sendAnthropicMessage(
   if (response.status !== 200) {
     const responseJson = response.json as unknown;
     const errorText = getNestedString(responseJson, ["error", "message"]) ?? `HTTP ${response.status}`;
-    throw new Error(`Anthropic API error (${response.status}): ${errorText}`);
+    throw new ProviderError(`Anthropic API error (${response.status}): ${errorText}`, response.status,
+      getNestedString(responseJson, ["error", "type"]), retryAfterMs(response.headers));
   }
 
   const data = parseAnthropicResponse(response.json as unknown);

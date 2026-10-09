@@ -1,5 +1,6 @@
 import { supportsReasoning, catalogIdentity } from "./model-catalog";
 import { requestUrl } from "obsidian";
+import { ProviderError, retryAfterMs } from "./errors";
 import type {
   ChatSettings,
   UnifiedMessage,
@@ -113,8 +114,10 @@ export async function sendOpenAIMessage(
   }
 
   if (response.status !== 200) {
-    const errorBody = getNestedString(response.json as unknown, ["error", "message"]) ?? `HTTP ${response.status}`;
-    throw new Error(`OpenAI API error (${response.status}): ${errorBody}`);
+    const json = response.json as unknown;
+    const errorBody = getNestedString(json, ["error", "message"]) ?? `HTTP ${response.status}`;
+    throw new ProviderError(`OpenAI API error (${response.status}): ${errorBody}`, response.status,
+      getNestedString(json, ["error", "code"]) ?? getNestedString(json, ["error", "type"]), retryAfterMs(response.headers));
   }
 
   const data = asRecord(response.json as unknown);

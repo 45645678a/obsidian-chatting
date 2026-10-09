@@ -1,4 +1,5 @@
 import type { ContentBlock, Provider, UnifiedMessage, UnifiedResponse } from "../types";
+import { ProviderError } from "./errors";
 
 /** Encode both fresh input and restored history without losing tool pairs. */
 export function buildResponsesInput(
@@ -50,8 +51,10 @@ export function fromResponsesOutput(
   identity?: string,
 ): UnifiedResponse {
   if (data.status === "failed" || data.error) {
-    const error = isRecord(data.error) ? data.error.message : undefined;
-    throw new Error(typeof error === "string" ? error : "Response failed.");
+    const error = isRecord(data.error) ? data.error : {};
+    // Status 0: the error came inside a response; its code decides on a retry.
+    throw new ProviderError(typeof error.message === "string" ? error.message : "Response failed.", 0,
+      typeof error.code === "string" ? error.code : undefined);
   }
   const output = Array.isArray(data.output) ? data.output.filter(isRecord) : [];
   const content: ContentBlock[] = [];

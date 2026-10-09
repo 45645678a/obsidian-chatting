@@ -547,7 +547,7 @@ test('Stopping during rate-limit backoff prevents the retried network request', 
   let stopped=false,requests=0;
   const previousWindow=globalThis.window;
   globalThis.window={setTimeout(fn){stopped=true;queueMicrotask(fn);}};
-  globalThis.__providerRequest=async()=>{requests++;throw new Error('HTTP 429');};
+  globalThis.__providerRequest=async()=>{requests++;return {status:429,json:{error:{message:'Slow down'}}};};
   try {
     await assert.rejects(api.sendMessage(settings('openai'),[{role:'user',content:'test'}],[],'test',()=>stopped),/cancelled/);
     assert.equal(requests,1);
