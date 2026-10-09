@@ -90,8 +90,9 @@ function requiredRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
+/** A JSON object; arrays and null are not. */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ─── Tool Implementations ───────────────────────────────────────────────────

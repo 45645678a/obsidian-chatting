@@ -1,5 +1,5 @@
-// Vault tools through the real executor: the date for daily notes. Also
-// how a selection scope reaches the model.
+// Vault tools through the real executor: the date for daily notes and
+// set_properties input checks. Also how a selection scope reaches the model.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { api, callbacks, response, settings, text, transport, vaultApp } from './harness.mjs';
@@ -33,4 +33,31 @@ test('A multi-line selection is quoted line by line', async () => {
   await agent.run('Shorten this', callbacks(), { text: 'First line\nSecond line\r\n\nFourth', filePath: 'Notes/Draft.md' });
   const sent = requests[0].messages[0].content;
   assert.match(sent, /Selected text:\n> First line\n> Second line\n> \n> Fourth\n\nShorten this$/);
+});
+
+// A note with frontmatter `properties`, edited through processFrontMatter.
+function propertiesVault(properties = {}) {
+  const frontmatter = { ...properties };
+  let edits = 0;
+  const app = {
+    workspace: { getActiveFile: () => null },
+    vault: { getFileByPath: path => (path === 'Note.md' ? { path } : null) },
+    fileManager: { processFrontMatter: async (file, fn) => { edits++; fn(frontmatter); } },
+  };
+  return { app, frontmatter, edits: () => edits };
+}
+
+test('set_properties refuses a list or a missing object and leaves the note alone', async () => {
+  for (const properties of [['tag'], 'tag: x', undefined, null]) {
+    const { app, frontmatter, edits } = propertiesVault({ keep: 1 });
+    const result = await run(app, 'set_properties', { path: 'Note.md', properties });
+    assert.equal(result.isError, true, JSON.stringify(properties));
+    assert.match(result.result, /must be an object/);
+    assert.equal(edits(), 0);
+    assert.deepEqual(frontmatter, { keep: 1 });
+  }
+  const { app, frontmatter } = propertiesVault({ keep: 1, old: 'x' });
+  const result = await run(app, 'set_properties', { path: 'Note.md', properties: { tags: ['a', 'b'], old: null } });
+  assert.equal(result.isError, false);
+  assert.deepEqual(frontmatter, { keep: 1, tags: ['a', 'b'] });
 });
