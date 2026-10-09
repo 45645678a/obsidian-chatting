@@ -1,4 +1,4 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { App, TFile, getFrontMatterInfo, normalizePath } from "obsidian";
 import type { ToolResult } from "../types";
 
 type AskUserCallback = (question: string) => Promise<string>;
@@ -76,13 +76,6 @@ async function ensureParentFolder(app: App, filePath: string): Promise<void> {
   if (parentPath && !app.vault.getFolderByPath(parentPath)) {
     await app.vault.createFolder(parentPath);
   }
-}
-
-function findFrontmatterEnd(content: string): number {
-  if (!content.startsWith("---")) return -1;
-  const secondDash = content.indexOf("---", 3);
-  if (secondDash === -1) return -1;
-  return secondDash + 3;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -181,26 +174,20 @@ async function editDocument(
       if (!position) {
         return { result: "'position' parameter is required for insert.", isError: true };
       }
+      if (position !== "beginning" && position !== "end" && position !== "after_frontmatter") {
+        return { result: `Unknown position: ${position}. Use beginning, end or after_frontmatter.`, isError: true };
+      }
 
       await app.vault.process(file, (data) => {
-        switch (position) {
-          case "beginning":
-            return content + "\n" + data;
-          case "end":
-            return data + "\n" + content;
-          case "after_frontmatter": {
-            const fmEnd = findFrontmatterEnd(data);
-            if (fmEnd === -1) return content + "\n" + data;
-            return data.substring(0, fmEnd) + "\n" + content + data.substring(fmEnd);
-          }
-          default:
-            return data; // Unknown position, return unchanged
-        }
+        if (position === "end") return data + "\n" + content;
+        // After the frontmatter as Obsidian reads it (0 without one), so a
+        // "---" inside a value doesn't count.
+        const start = position === "after_frontmatter" ? getFrontMatterInfo(data).contentStart : 0;
+        const head = data.substring(0, start);
+        // A note that ends right at the closing --- has no line break after it.
+        const separator = head && !head.endsWith("\n") ? "\n" : "";
+        return head + separator + content + "\n" + data.substring(start);
       });
-
-      if (position !== "beginning" && position !== "end" && position !== "after_frontmatter") {
-        return { result: `Unknown position: ${position}`, isError: true };
-      }
 
       return { result: `Inserted content at ${position} of ${file.path}.`, isError: false };
     }

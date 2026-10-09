@@ -39,6 +39,18 @@ export const bundled = await build({
       export class TFile { constructor(path) { this.path = path; this.extension = 'md'; } }
       export const normalizePath = path => path;
       export const requestUrl = request => globalThis.__providerRequest(request);
+      // Obsidian's rule: a "---" line at the start up to the next "---" line.
+      export function getFrontMatterInfo(content) {
+        const none = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
+        const open = /^---\\r?\\n/.exec(content);
+        if (!open) return none;
+        const close = /---(\\r?\\n|$)/g;
+        close.lastIndex = open[0].length;
+        let match = close.exec(content);
+        while (match && content[match.index - 1] !== '\\n') match = close.exec(content);
+        if (!match) return none;
+        return { exists: true, frontmatter: content.slice(open[0].length, match.index), from: open[0].length, to: match.index, contentStart: close.lastIndex };
+      }
     `, loader: 'js' }));
   } }],
 });
