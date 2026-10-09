@@ -203,3 +203,45 @@ test('Copy transcript: refused while the conversation is empty, else its Markdow
     if (previous) Object.defineProperty(globalThis, 'navigator', previous); else delete globalThis.navigator;
   }
 });
+
+test('Commands act on the chat view as soon as its UI is mounted, not after a fixed delay', async () => {
+  const { plugin, view, chat, app } = await chatSetup('anthropic');
+  plugin.isProviderConfigured = () => true;
+  const revealed = [];
+  app.workspace.getLeavesOfType = () => [{ view }];
+  app.workspace.revealLeaf = async leaf => { revealed.push(leaf); };
+  const selected = [];
+  chat.setSelection = selection => selected.push(selection);
+
+  const opening = plugin.openChatWithSelection({ text: 'Words', filePath: 'Plan.md' });
+  await until(() => revealed.length === 1);
+  // Revealed, but the UI isn't mounted yet: the command waits.
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.deepEqual(selected, []);
+  view.markReady();
+  await opening;
+  assert.deepEqual(selected, [{ text: 'Words', filePath: 'Plan.md' }]);
+
+  const requests = answering('anthropic');
+  await plugin.openChatWithMessage('Tell me about Plan.md');
+  await until(() => !view.running);
+  assert.equal(requests.length, 1);
+  assert.equal(chat.shown[0].text, 'Tell me about Plan.md');
+});
+
+test('A view whose UI fails to mount is still ready, so commands waiting for it go on; sending only shows a notice', async () => {
+  const { plugin } = await chatSetup('anthropic');
+  const view = new api.ObsidianChatView({}, plugin);
+  view.mountChat = () => { throw new Error('mount failed'); };
+  await assert.rejects(view.onOpen(), /mount failed/);
+  let timer;
+  const ready = await Promise.race([view.ready.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 500); })]);
+  clearTimeout(timer);
+  assert.equal(ready, true);
+  // Without the UI, sending does nothing (and leaves the view usable).
+  const requests = answering('anthropic');
+  await view.handleUserMessage('Hello', null);
+  assert.equal(view.running, false);
+  assert.equal(requests.length, 0);
+  assert.deepEqual(globalThis.__notices, ["The chat panel couldn't be shown, so the message wasn't sent."]);
+});

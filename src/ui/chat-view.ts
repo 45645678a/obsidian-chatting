@@ -78,10 +78,14 @@ export class ObsidianChatView extends ItemView {
   private plugin: ChatPlugin;
   private chatContainer: ChatContainerApi | undefined;
   private running = false;
+  /** Resolves once onOpen() has mounted the chat UI, or failed to. */
+  readonly ready: Promise<void>;
+  private markReady!: () => void;
 
   constructor(leaf: WorkspaceLeaf, plugin: ChatPlugin) {
     super(leaf);
     this.plugin = plugin;
+    this.ready = new Promise((resolve) => { this.markReady = resolve; });
   }
 
   getViewType(): string {
@@ -99,6 +103,16 @@ export class ObsidianChatView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    try {
+      this.mountChat();
+    } finally {
+      // Also when mounting failed: commands waiting for the view go on
+      // (its methods do nothing without the UI) instead of waiting forever.
+      this.markReady();
+    }
+  }
+
+  private mountChat(): void {
     const container = this.contentEl;
     container.empty();
     container.addClass("ochatting-view-container");
@@ -187,7 +201,12 @@ export class ObsidianChatView extends ItemView {
       return;
     }
 
-    const chat = this.chatContainer!;
+    const chat = this.chatContainer;
+    if (!chat) {
+      // No UI (mounting it failed): nothing to show the turn in.
+      new Notice("The chat panel couldn't be shown, so the message wasn't sent.");
+      return;
+    }
     const history = this.plugin.chatHistory;
 
     this.running = true;
