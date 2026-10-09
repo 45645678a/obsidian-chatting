@@ -301,6 +301,21 @@ export class ChatGPTOAuthService {
   }
 
   /**
+   * A new credential after the server rejected `rejected` (401): the stored
+   * one if another request refreshed it meanwhile, else a refresh (shared
+   * with one already running). Null when disconnected. Throws if the
+   * refresh fails.
+   */
+  async renewRejected(
+    rejected: Pick<ChatGPTOAuthCredential, "accessToken">,
+  ): Promise<ChatGPTOAuthCredential | null> {
+    const current = this.store.get();
+    if (!current) return null;
+    if (current.accessToken !== rejected.accessToken) return current;
+    return this.refreshCredential(current);
+  }
+
+  /**
    * Return a credential that is guaranteed to be currently valid, refreshing
    * if necessary. Returns null if there's no stored credential at all.
    * Throws if a refresh is needed but fails.

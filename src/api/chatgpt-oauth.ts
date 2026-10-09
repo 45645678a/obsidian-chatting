@@ -164,12 +164,23 @@ export async function sendChatGPTOAuthMessage(
 
   // Codex backend only accepts streaming requests. We always send
   // `stream: true` and parse the buffered SSE body client-side.
-  return sendOnce(
-    { ...baseBody, stream: true },
-    credential.accessToken,
-    credential.accountId,
-    identity,
-  );
+  const body = { ...baseBody, stream: true };
+  try {
+    return await sendOnce(body, credential.accessToken, credential.accountId, identity);
+  } catch (e) {
+    // A rejected token (401), e.g. revoked before it expired: refresh once
+    // and retry once. A second 401, or a failed refresh, keeps the
+    // "reconnect" error.
+    if (!(e instanceof ProviderError) || e.status !== 401) throw e;
+    let renewed;
+    try {
+      renewed = await oauthService.renewRejected(credential);
+    } catch {
+      throw e;
+    }
+    if (!renewed) throw e;
+    return sendOnce(body, renewed.accessToken, renewed.accountId, identity);
+  }
 }
 
 async function sendOnce(
@@ -209,8 +220,10 @@ async function sendOnce(
   }
 
   if (response.status === 401 || response.status === 403) {
-    throw new ChatGPTOAuthError(
+    // The status lets the caller refresh the token once after a 401.
+    throw new ProviderError(
       `ChatGPT OAuth session rejected by the server (HTTP ${response.status}). Please reconnect your ChatGPT account in settings.`,
+      response.status,
     );
   }
 

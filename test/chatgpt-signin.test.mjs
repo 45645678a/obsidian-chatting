@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { api } from './harness.mjs';
+import { api, response, settings, text } from './harness.mjs';
 
 const TOKEN_URL = 'https://auth.openai.com/oauth/token';
 
@@ -71,4 +71,54 @@ test('A refresh that ends after Disconnect or another sign-in stores nothing', a
     await assert.rejects(refreshing, /changed while the token was refreshed/, label);
     assert.deepEqual(store.get(), expected, label);
   }
+});
+
+// Signed in with a valid token; the server answers refreshes with `refresh` and Codex requests with `respond`.
+function signedInRoute({ refresh, respond }) {
+  const { store, oauth } = signedIn(3_600_000);
+  api.setChatGPTOAuthService(oauth);
+  const calls = { refresh: 0, bearers: [] };
+  globalThis.__providerRequest = async request => {
+    if (request.url === TOKEN_URL) { calls.refresh++; return refresh(calls.refresh); }
+    calls.bearers.push(request.headers.Authorization);
+    return respond(calls.bearers.length);
+  };
+  return { store, oauth, calls };
+}
+const refreshed = n => ({ status: 200, json: { access_token: `fake-access-${n + 1}`, refresh_token: `fake-refresh-${n + 1}`, expires_in: 3600 } });
+const rejected = { status: 401, json: { detail: 'Unauthorized' } };
+const send = () => api.sendChatGPTOAuthMessage(settings('chatgpt-oauth'), [{ role: 'user', content: 'Hi' }], [], 'System');
+
+test('A 401 refreshes the token once and retries once with the new one', async () => {
+  const { oauth, calls } = signedInRoute({ refresh: refreshed, respond: n => n === 1 ? rejected : response('chatgpt-oauth', [text('OK')]) });
+  const answer = await send();
+  assert.equal(answer.content[0].text, 'OK');
+  assert.equal(calls.refresh, 1);
+  assert.deepEqual(calls.bearers, ['Bearer fake-access-1', 'Bearer fake-access-2']);
+  assert.equal(oauth.getCredential().refreshToken, 'fake-refresh-2');
+});
+
+test('A second 401 or a failed refresh keeps the reconnect error; no third request', async () => {
+  let state = signedInRoute({ refresh: refreshed, respond: () => rejected });
+  await assert.rejects(send(), /session rejected by the server \(HTTP 401\)\. Please reconnect/);
+  assert.equal(state.calls.refresh, 1);
+  assert.equal(state.calls.bearers.length, 2);
+  assert.ok(state.oauth.getCredential());
+
+  state = signedInRoute({ refresh: () => { throw new Error('net::ERR_INTERNET_DISCONNECTED'); }, respond: () => rejected });
+  await assert.rejects(send(), /Please reconnect/);
+  assert.equal(state.calls.bearers.length, 1);
+  assert.equal(state.oauth.getCredential().accessToken, 'fake-access-1');
+
+  // A 403 is not a token problem: no refresh.
+  state = signedInRoute({ refresh: refreshed, respond: () => ({ status: 403, json: { detail: 'Forbidden' } }) });
+  await assert.rejects(send(), /HTTP 403/);
+  assert.equal(state.calls.refresh, 0);
+});
+
+test('Parallel 401s share one refresh, and both retry with the new token', async () => {
+  const { calls } = signedInRoute({ refresh: refreshed, respond: n => n <= 2 ? rejected : response('chatgpt-oauth', [text('OK')]) });
+  await Promise.all([send(), send()]);
+  assert.equal(calls.refresh, 1);
+  assert.deepEqual(calls.bearers.slice(2), ['Bearer fake-access-2', 'Bearer fake-access-2']);
 });
