@@ -24,9 +24,14 @@ Each save writes the backup and then the main file. An existing complete copy ca
 
 After a downgrade, an untimestamped main file whose filesystem mtime is newer than or equal to the timestamped copy is authoritative. Equal mtimes are ambiguous on coarse filesystems; the conservative choice avoids resurrecting a stale conversation, but may retain the last complete main file rather than a newer backup during a first interrupted upgrade.
 
+## Native desktop evidence (2026-10-10)
+
+Obsidian 1.13.7 ran both the original 0.4.0 build and the integration build in an isolated SSD vault. Native commands exercised the real plugin instance and vault adapter. Upgrade, truncated-main recovery, downgrade writes, reupgrade, settings retention, and a complete test-window reload passed. The real chat UI displayed the restored message. Clearing through the UI persisted empty visible and API histories to both copies; another window reload kept the UI empty. No API request was sent. This is window-reload evidence, not a forced-process-crash test.
+
+The installed integration main.js matched the production build SHA-256 `5a4abc3ee13a31868027c6f7124871226ae5bdebf3e0f2f5984624457a6fe0a8`. Stage reports are in [chat-saving-desktop-qa.json](chat-saving-desktop-qa.json). All 81 offline tests were rerun successfully, including mocked provider responses for Anthropic, OpenAI, and ChatGPT, tool-call replay, cancellation, and delayed-save protection. Live provider access and physical iPhone behavior remain unverified.
+
 ## Remaining release gates
 
-- Native Obsidian desktop verification in an isolated vault: upgrade from 0.4.0, restore, reload, downgrade, and reupgrade. A local synthetic-only vault is prepared; its plugin trust prompt awaits user confirmation.
 - Physical iPhone persistence/restart verification. Device enumeration alone is not proof, and sim-use cannot drive App Store Obsidian.
 - The final code commit `069ac1b` has passing CI, a completed clean Codex review (+1; all three findings resolved), and a completed Community branch scan with no errors. Documentation-only follow-up commits still receive fresh CI/review/Community checks before merge.
 - Merge, post-merge main CI, separate 0.4.1 release preparation, asset verification, and formal Community release scan.

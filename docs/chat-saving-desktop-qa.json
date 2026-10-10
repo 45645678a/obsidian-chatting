@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-10",
+  "sourceCommit": "377699adafb671360084584fdcbd96d05604b4f0",
+  "codeCommit": "069ac1bf9b7b1b9c219d23cb01ff378967f1a370",
+  "appVersion": "1.13.7",
+  "installedMainJsSha256": "5a4abc3ee13a31868027c6f7124871226ae5bdebf3e0f2f5984624457a6fe0a8",
+  "liveProviderRequests": 0,
+  "scope": "Native Obsidian desktop window reload and real vault adapter; synthetic conversations; no process crash or physical phone test",
+  "stages": [
+    {
+      "stage": "baseline",
+      "passed": true,
+      "appVersion": "1.13.7",
+      "pluginVersion": "0.4.0",
+      "visibleHistory": "Legacy baseline|Preserved reply",
+      "apiHistoryCount": 2,
+      "settingsPreserved": true
+    },
+    {
+      "stage": "upgrade",
+      "passed": true,
+      "appVersion": "1.13.7",
+      "pluginVersion": "0.4.0",
+      "visibleHistory": "Legacy baseline|Preserved reply|Upgraded history",
+      "apiHistoryCount": 2,
+      "settingsPreserved": true
+    },
+    {
+      "stage": "rollback",
+      "passed": true,
+      "appVersion": "1.13.7",
+      "pluginVersion": "0.4.0",
+      "visibleHistory": "Edited after downgrade",
+      "apiHistoryCount": 1,
+      "settingsPreserved": true
+    },
+    {
+      "stage": "reupgrade",
+      "passed": true,
+      "appVersion": "1.13.7",
+      "pluginVersion": "0.4.0",
+      "visibleHistory": "Edited after downgrade",
+      "apiHistoryCount": 1,
+      "settingsPreserved": true
+    },
+    {
+      "stage": "verify-view",
+      "passed": true,
+      "appVersion": "1.13.7",
+      "pluginVersion": "0.4.0",
+      "visibleHistory": "Edited after downgrade",
+      "apiHistoryCount": 1,
+      "settingsPreserved": true
+    },
+    {
+      "stage": "clear-and-window-reload",
+      "passed": true,
+      "visibleHistoryCount": 0,
+      "apiHistoryCount": 0,
+      "matchingCopies": true,
+      "uiObservedEmpty": true
+    }
+  ]
+}
