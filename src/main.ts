@@ -647,14 +647,36 @@ function isPersistedChatState(value: unknown): value is PersistedChatState {
   if (!Array.isArray(value.chatHistory) && !Array.isArray(value.agentMessages)) return false;
   if ("chatHistory" in value && !Array.isArray(value.chatHistory)) return false;
   if ("agentMessages" in value && !Array.isArray(value.agentMessages)) return false;
-  if (Array.isArray(value.chatHistory) && !value.chatHistory.every(entry =>
-    isRecord(entry) && typeof entry.type === "string" &&
-    (!("text" in entry) || typeof entry.text === "string"))) return false;
+  if (Array.isArray(value.chatHistory) && !value.chatHistory.every(isChatHistoryEntry)) return false;
   if (Array.isArray(value.agentMessages) && !value.agentMessages.every(message =>
     isRecord(message) && (message.role === "user" || message.role === "assistant") &&
     (typeof message.content === "string" || (Array.isArray(message.content) &&
       message.content.every(block => isRecord(block) && typeof block.type === "string"))))) return false;
   return !("savedAt" in value) || (typeof value.savedAt === "number" && Number.isFinite(value.savedAt) && value.savedAt >= 0);
+}
+
+function isChatHistoryEntry(entry: unknown): boolean {
+  if (!isRecord(entry) || Array.isArray(entry) || typeof entry.type !== "string") return false;
+  if ("text" in entry && typeof entry.text !== "string") return false;
+  if (["user", "assistant", "error"].includes(entry.type) && typeof entry.text !== "string") return false;
+  if (entry.type === "tool-result" &&
+    (typeof entry.toolName !== "string" || entry.toolName.length === 0 || !("toolResult" in entry))) return false;
+  if ("toolName" in entry && typeof entry.toolName !== "string") return false;
+  if ("toolInput" in entry && (!isRecord(entry.toolInput) || Array.isArray(entry.toolInput))) return false;
+  if ("toolResult" in entry && (!isRecord(entry.toolResult) || Array.isArray(entry.toolResult) ||
+    typeof entry.toolResult.result !== "string" || typeof entry.toolResult.isError !== "boolean")) return false;
+  if ("images" in entry) {
+    if (!Array.isArray(entry.images) || !entry.images.every(image =>
+      isRecord(image) && !Array.isArray(image) && typeof image.id === "string" &&
+      typeof image.fileName === "string" && typeof image.mediaType === "string" &&
+      typeof image.data === "string" && typeof image.sizeBytes === "number" &&
+      Number.isFinite(image.sizeBytes) && image.sizeBytes >= 0)) return false;
+    // Svelte's keyed image list cannot render duplicate attachment IDs.
+    const imageIds = entry.images.map((image: unknown) =>
+      isRecord(image) && typeof image.id === "string" ? image.id : "");
+    if (new Set(imageIds).size !== entry.images.length) return false;
+  }
+  return true;
 }
 
 function normalizeSettings(value: unknown): Partial<ChatSettings> {

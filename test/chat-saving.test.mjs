@@ -310,3 +310,36 @@ test('A late turn finally callback from an unloaded plugin cannot overwrite the 
   assert.deepEqual(JSON.parse(files.get(STATE)).chatHistory, next.chatHistory);
   assert.equal(files.get(STATE), files.get(NEXT));
 });
+
+
+test('Malformed nested UI history fields recover the readable backup before view replay', async () => {
+  const image = { id: 'image-1', fileName: 'test.png', mediaType: 'image/png', data: 'AA==', sizeBytes: 1 };
+  for (const entry of [
+    { type: 'user', text: 'x', images: {} },
+    { type: 'user', text: 'x', images: [null] },
+    { type: 'user', text: 'x', images: [{ ...image, data: 42 }] },
+    { type: 'user', text: 'x', images: [image, image] },
+    { type: 'assistant' },
+    { type: 'tool-result' },
+    { type: 'tool-result', toolName: 'read_file' },
+    { type: 'tool-result', toolResult: { result: 'ok', isError: false } },
+    { type: 'tool-result', toolName: '', toolResult: { result: 'ok', isError: false } },
+    { type: 'tool-result', toolName: 42, toolResult: { result: 'ok', isError: false } },
+    { type: 'tool-result', toolName: 'read_file', toolInput: [], toolResult: { result: 'ok', isError: false } },
+    { type: 'tool-result', toolName: 'read_file', toolResult: { result: {}, isError: false } },
+    { type: 'tool-result', toolName: 'read_file', toolResult: { result: 'ok', isError: 'false' } },
+  ]) {
+    const { plugin } = await loadFrom(JSON.stringify({ chatHistory: [entry], savedAt: 2000 }), { next: savedState('Recovered', 1000) });
+    assert.deepEqual(texts(plugin), ['Recovered']);
+  }
+});
+
+test('Valid image attachments and tool result history remain intact on restore', async () => {
+  const chatHistory = [
+    { type: 'user', text: 'Image question', images: [{ id: 'image-1', fileName: 'test.png', mediaType: 'image/png', data: 'AA==', sizeBytes: 1 }] },
+    { type: 'tool-result', toolName: 'read_file', toolInput: { path: 'Test.md' }, toolResult: { result: 'Contents', isError: false } },
+    { type: 'assistant', text: 'Answer' },
+  ];
+  const { plugin } = await loadFrom(JSON.stringify({ chatHistory }));
+  assert.deepEqual(plugin.chatHistory, chatHistory);
+});

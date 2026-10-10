@@ -47,3 +47,7 @@ Live Anthropic, OpenAI API-key access, physical iPhone, and forced-process-crash
 - Merge, post-merge main CI, separate 0.4.1 release preparation, asset verification, and formal Community release scan.
 
 GOAL.md is the task progress record. No release is represented as complete by this document.
+
+## Release review follow-up
+
+PR #12 additionally validates nested visible-history fields before restoring: image arrays, attachment shapes and unique IDs, tool inputs/results, and required text for supported text messages. A malformed-image regression failed before the fix; all 83 tests pass afterward, including valid image/tool history round-trip coverage. Native automation for this newly found malformed-attachment case did not execute because CUA input remained unresponsive; the earlier native desktop/OAuth evidence is unchanged in scope.
