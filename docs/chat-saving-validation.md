@@ -28,7 +28,17 @@ After a downgrade, an untimestamped main file whose filesystem mtime is newer th
 
 Obsidian 1.13.7 ran both the original 0.4.0 build and the integration build in an isolated SSD vault. Native commands exercised the real plugin instance and vault adapter. Upgrade, truncated-main recovery, downgrade writes, reupgrade, settings retention, and a complete test-window reload passed. The real chat UI displayed the restored message. Clearing through the UI persisted empty visible and API histories to both copies; another window reload kept the UI empty. No API request was sent. This is window-reload evidence, not a forced-process-crash test.
 
-The installed integration main.js matched the production build SHA-256 `5a4abc3ee13a31868027c6f7124871226ae5bdebf3e0f2f5984624457a6fe0a8`. Stage reports are in [chat-saving-desktop-qa.json](chat-saving-desktop-qa.json). All 81 offline tests were rerun successfully, including mocked provider responses for Anthropic, OpenAI, and ChatGPT, tool-call replay, cancellation, and delayed-save protection. Live provider access and physical iPhone behavior remain unverified.
+The installed integration main.js matched the production build SHA-256 `5a4abc3ee13a31868027c6f7124871226ae5bdebf3e0f2f5984624457a6fe0a8`. Stage reports are in [chat-saving-desktop-qa.json](chat-saving-desktop-qa.json). All 81 offline tests were rerun successfully, including mocked provider responses for Anthropic, OpenAI, and ChatGPT, tool-call replay, cancellation, and delayed-save protection. At that checkpoint, live provider access and physical iPhone behavior were unverified; the later OAuth test below adds live ChatGPT evidence.
+
+## Live ChatGPT OAuth evidence (2026-10-10)
+
+The user signed the isolated vault into ChatGPT and selected `gpt-6.1-sol`. The vault is now named **ob 插件测试**, located at `/Volumes/StudioSSD/Obsidian/ob 插件测试`. The original vault registration was retained through Obsidian's native rename/move actions so its SecretStorage login remained available.
+
+The user-authorized copies of `10 Projects` and `30 Resources` contain 1,771 files (128,398,973 bytes), including attachments. No other main-vault directories or plugin configuration were copied. Check-like path names were excluded by policy; none occurred within the two selected trees. Every copied file was SHA-256 checked against its source, and no file shares an inode with its source. Both trees still match after live tests. The detailed private copy manifest stays in the test vault, outside this repository.
+
+Real ChatGPT responses successfully listed project files, read a copied README template, created a QA note, and continued after a full test-window reload. Before rereading the QA file, the model recalled the previous marker and count. It then edited the QA note, set a frontmatter property, and read back the result. Stop returned the UI to an available input, and a subsequent real turn succeeded. Writes were confined to `QA/`. The final saved state and backup matched. See [chat-saving-oauth-qa.json](chat-saving-oauth-qa.json) for sanitized evidence; credentials, private note contents, and filename inventories are excluded.
+
+Live Anthropic, OpenAI API-key access, physical iPhone, and forced-process-crash behavior remain unverified.
 
 ## Remaining release gates
 
