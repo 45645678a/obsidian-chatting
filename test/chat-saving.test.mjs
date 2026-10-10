@@ -4,7 +4,7 @@
 // never overlap.
 import assert from 'node:assert/strict';
 import { test, beforeEach } from 'node:test';
-import { api, settings, vaultApp } from './harness.mjs';
+import { api, bundled, settings, vaultApp } from './harness.mjs';
 
 beforeEach(() => {
   globalThis.__notices = [];
@@ -239,16 +239,56 @@ test('Serialized saves have strictly increasing timestamps even in the same mill
   }
 });
 
-test('After a downgrade rewrites the main file, a newer main mtime beats the stale timestamped copy', async () => {
+test('After a downgrade, a newer or tied main mtime beats the stale timestamped copy', async () => {
+ for (const mainMtime of [3000, 4000]) {
   const files = new Map([[STATE, savedState('Changed on 0.4.0')], [NEXT, savedState('Stale copy', 2000)]]);
   const plugin = pluginOn({
     read: async path => files.get(path),
     exists: async path => files.has(path),
-    stat: async path => ({ type: 'file', mtime: path === STATE ? 4000 : 3000, ctime: 1, size: 1 }),
+    stat: async path => ({ type: 'file', mtime: path === STATE ? mainMtime : 3000, ctime: 1, size: 1 }),
     write: async (path, data) => files.set(path, data),
   });
   await plugin.loadChatHistory();
   assert.deepEqual(texts(plugin), ['Changed on 0.4.0']);
   await plugin.saveChatHistory();
   assert.deepEqual(JSON.parse(files.get(NEXT)).chatHistory.map(e => e.text), ['Changed on 0.4.0']);
+ }
+});
+
+test('A reloaded instance waits for the prior instance queued unload save before reading history', async () => {
+  const files = new Map();
+  const pending = [];
+  const adapter = {
+    read: async path => { if (!files.has(path)) throw Error('ENOENT'); return files.get(path); },
+    exists: async path => files.has(path),
+    write: (path, data) => path === NEXT ? Promise.resolve(files.set(path, data)) :
+      new Promise(resolve => pending.push(() => { files.set(path, data); resolve(); })),
+  };
+  const old = pluginOn(adapter);
+  await old.loadChatHistory();
+  old.chatHistory = [{type: 'user', text: 'Old'}];
+  const first = old.saveChatHistory();
+  while (pending.length === 0) await tick();
+  old.chatHistory = [];
+  old.agent.clear();
+  old.onunload();
+  // Obsidian reuses its App when it unloads/re-enables a plugin bundle.
+  // Load a second bundle, as Obsidian does during plugin reload; a
+  // module-local queue would not be shared with this instance.
+  const fresh = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(bundled.outputFiles[0].text)}#reloaded`);
+  const next = new fresh.ChatPlugin();
+  next.app = old.app;
+  next.agent = new fresh.AgentLoop(old.app, settings('anthropic'));
+  let loaded = false;
+  const loading = next.loadChatHistory().then(() => { loaded = true; });
+  await tick();
+  assert.equal(loaded, false);
+  pending.shift()();
+  await first;
+  while (pending.length === 0) await tick();
+  assert.equal(loaded, false);
+  pending.shift()();
+  await loading;
+  assert.deepEqual(next.chatHistory, []);
+  assert.deepEqual(JSON.parse(files.get(STATE)).chatHistory, []);
 });

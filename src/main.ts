@@ -6,6 +6,7 @@ import {
   Menu,
   TFile,
   type TAbstractFile,
+  type App,
 } from "obsidian";
 import type { ChatSettings, SelectionScope, ImageAttachment } from "./types";
 import { DEFAULT_SETTINGS, DEFAULT_PROVIDER_MODELS } from "./types";
@@ -23,6 +24,10 @@ const LEGACY_RELEASE_ASSETS = new Set(["main.js", "manifest.json", "styles.css"]
 const SECRET_PROVIDERS = ["anthropic", "openai", "chatgpt-oauth"];
 const CHATGPT_OAUTH_SECRET_KEY = `${PLUGIN_ID}-chatgpt-oauth`;
 const LEGACY_CHATGPT_OAUTH_SECRET_KEY = `${LEGACY_PLUGIN_ID}-chatgpt-oauth`;
+// App survives plugin bundle reloads; Symbol.for gives each new bundle
+// the same key without persisting promises or adding a file lock.
+const CHAT_STATE_WRITE = Symbol.for("chatting-with-ai-pending-chat-state-write");
+type ChatPersistenceApp = App & { [CHAT_STATE_WRITE]?: Promise<void> };
 
 export default class ChatPlugin extends Plugin {
   settings: ChatSettings = DEFAULT_SETTINGS;
@@ -48,6 +53,7 @@ export default class ChatPlugin extends Plugin {
   private lastChatStateSavedAt = 0;
 
   async onload(): Promise<void> {
+    await this.waitForChatStateWrites();
     await this.migrateLegacyPluginData();
     await this.loadSettings();
 
@@ -165,6 +171,7 @@ export default class ChatPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.agent?.abort();
     void this.saveChatHistory();
   }
 
@@ -305,11 +312,31 @@ export default class ChatPlugin extends Plugin {
   saveChatHistory(): Promise<void> {
     if (!this.chatHistoryLoaded) return Promise.resolve();
     if (!this.chatStateWrite) return this.startChatStateWrite();
-    this.nextChatStateWrite ??= this.chatStateWrite.then(() => {
-      this.nextChatStateWrite = null;
-      return this.startChatStateWrite();
-    });
+    if (!this.nextChatStateWrite) {
+      this.nextChatStateWrite = this.chatStateWrite.then(() => {
+        this.nextChatStateWrite = null;
+        return this.startChatStateWrite();
+      });
+      this.trackChatStateWrite(this.nextChatStateWrite);
+    }
     return this.nextChatStateWrite;
+  }
+
+  /** Publish the latest queued save immediately, including an unload save. */
+  private trackChatStateWrite(write: Promise<void>): void {
+    const app = this.app as ChatPersistenceApp;
+    app[CHAT_STATE_WRITE] = write;
+    void write.then(() => {
+      if (app[CHAT_STATE_WRITE] === write) delete app[CHAT_STATE_WRITE];
+    });
+  }
+
+  /** A newly loaded plugin must see the previous instance's final snapshot. */
+  private async waitForChatStateWrites(): Promise<void> {
+    const app = this.app as ChatPersistenceApp;
+    while (app[CHAT_STATE_WRITE]) {
+      await app[CHAT_STATE_WRITE];
+    }
   }
 
   private startChatStateWrite(): Promise<void> {
@@ -317,6 +344,7 @@ export default class ChatPlugin extends Plugin {
       if (this.chatStateWrite === write) this.chatStateWrite = null;
     });
     this.chatStateWrite = write;
+    this.trackChatStateWrite(write);
     return write;
   }
 
@@ -347,6 +375,7 @@ export default class ChatPlugin extends Plugin {
   }
 
   private async loadChatHistory(): Promise<void> {
+    await this.waitForChatStateWrites();
     const state = await this.readChatState();
     // Unreadable and not set aside: saving would overwrite it.
     if (state === undefined) return;
@@ -401,7 +430,9 @@ export default class ChatPlugin extends Plugin {
       if (main.savedAt === undefined && copy.savedAt !== undefined) {
         try {
           const [mainStat, copyStat] = await Promise.all([adapter.stat(path), adapter.stat(this.nextChatStatePath)]);
-          if (mainStat && copyStat && mainStat.mtime > copyStat.mtime) return main;
+          // Coarse mobile/filesystem timestamps can tie. In that ambiguous
+          // case prefer the old-version main file over resurrecting its copy.
+          if (mainStat && copyStat && mainStat.mtime >= copyStat.mtime) return main;
         } catch {
           // A stat failure retains normal timestamp-based recovery.
         }
