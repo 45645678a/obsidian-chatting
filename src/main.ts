@@ -39,6 +39,11 @@ export default class ChatPlugin extends Plugin {
     toolInput?: Record<string, unknown>;
     toolResult?: { result: string; isError: boolean };
   }> = [];
+  /** Set once the saved chat has been read; saves before that would overwrite it. */
+  private chatHistoryLoaded = false;
+  /** The chat-state write in progress, and the one queued after it. */
+  private chatStateWrite: Promise<void> | null = null;
+  private nextChatStateWrite: Promise<void> | null = null;
 
   async onload(): Promise<void> {
     await this.migrateLegacyPluginData();
@@ -290,35 +295,119 @@ export default class ChatPlugin extends Plugin {
 
   // ─── Chat history persistence ─────────────────────────────────────────
 
-  async saveChatHistory(): Promise<void> {
+  /**
+   * Saves the chat. One write at a time: a save asked for while one is
+   * being written waits for it, and all such calls share that one next
+   * write, which takes the state when it starts.
+   */
+  saveChatHistory(): Promise<void> {
+    if (!this.chatHistoryLoaded) return Promise.resolve();
+    if (!this.chatStateWrite) return this.startChatStateWrite();
+    this.nextChatStateWrite ??= this.chatStateWrite.then(() => {
+      this.nextChatStateWrite = null;
+      return this.startChatStateWrite();
+    });
+    return this.nextChatStateWrite;
+  }
+
+  private startChatStateWrite(): Promise<void> {
+    const write: Promise<void> = this.writeChatState().finally(() => {
+      if (this.chatStateWrite === write) this.chatStateWrite = null;
+    });
+    this.chatStateWrite = write;
+    return write;
+  }
+
+  /**
+   * Writes the current state; it is taken before the first await. Never
+   * throws. The adapter empties a file before writing it, and Obsidian may
+   * end mid-write (reload, quit: onunload saves too), so the state is
+   * written twice: to `chat-state.next.json`, then to `chat-state.json`.
+   * One of them is always whole; loading takes the newer whole one. No
+   * delete and rename: on Windows a file another process has open stays
+   * "delete pending" and the rename then fails.
+   */
+  private async writeChatState(): Promise<void> {
     try {
-      const state = {
+      const state: PersistedChatState = {
+        // Which of the two copies is newer when both are whole.
+        savedAt: Date.now(),
         chatHistory: this.chatHistory.slice(-100), // Cap at 100 UI messages
         agentMessages: this.agent.exportMessages(80), // Keep complete API turns
       };
-      await this.app.vault.adapter.write(
-        this.chatStatePath,
-        JSON.stringify(state)
-      );
+      const json = JSON.stringify(state);
+      const { adapter } = this.app.vault;
+      await adapter.write(this.nextChatStatePath, json);
+      await adapter.write(this.chatStatePath, json);
     } catch {
       // Persistence is best-effort
     }
   }
 
   private async loadChatHistory(): Promise<void> {
-    try {
-      const raw = await this.readFirstExisting([this.chatStatePath, this.legacyChatStatePath]);
-      const state: unknown = JSON.parse(raw);
-      if (!isPersistedChatState(state)) return;
+    const state = await this.readChatState();
+    // Unreadable and not set aside: saving would overwrite it.
+    if (state === undefined) return;
+    if (state) {
       if (Array.isArray(state.chatHistory)) {
         this.chatHistory = state.chatHistory;
       }
       if (Array.isArray(state.agentMessages)) {
         this.agent.importMessages(state.agentMessages);
       }
-    } catch {
-      // No saved state or parse error — start fresh
     }
+    this.chatHistoryLoaded = true;
+  }
+
+  /**
+   * The saved chat: the newer of `chat-state.json` and its copy
+   * `chat-state.next.json`, else the legacy file. Null when there is none
+   * yet, or when `chat-state.json` couldn't be read and was renamed to
+   * `chat-state.corrupt-<time>.json` (with a notice); undefined when it
+   * couldn't be read and couldn't be renamed either.
+   */
+  private async readChatState(): Promise<PersistedChatState | null | undefined> {
+    const { adapter } = this.app.vault;
+    const read = async (file: string): Promise<PersistedChatState> => {
+      const state: unknown = JSON.parse(await adapter.read(file));
+      if (!isPersistedChatState(state)) throw new Error("Not a saved chat");
+      return state;
+    };
+    const path = this.chatStatePath;
+    let exists = true;
+    let main: PersistedChatState | null = null;
+    try {
+      main = await read(path);
+    } catch {
+      exists = await adapter.exists(path).catch(() => true);
+    }
+    // The copy: whole when chat-state.json was cut off while written, and
+    // newer when Obsidian ended between the two writes, or writing
+    // chat-state.json failed (another program had it open).
+    let copy: PersistedChatState | null = null;
+    try {
+      copy = await read(this.nextChatStatePath);
+    } catch {
+      // None, or cut off while it was written
+    }
+    if (main && copy) return (copy.savedAt ?? 0) > (main.savedAt ?? 0) ? copy : main;
+    if (main ?? copy) return main ?? copy;
+    if (!exists) {
+      try {
+        return await read(this.legacyChatStatePath);
+      } catch {
+        return null;
+      }
+    }
+    const name = `chat-state.corrupt-${Date.now()}.json`;
+    try {
+      await adapter.rename(path, `${this.pluginDataDir}/${name}`);
+    } catch {
+      new Notice("The saved chat couldn't be read. The file is left as it is, and the chat isn't saved until Obsidian restarts.");
+      return undefined;
+    }
+    new Notice(`The saved chat couldn't be read. The file was kept as ${name} in the plugin folder; starting with an empty chat.`);
+    return null;
   }
 
   // ─── Settings persistence ────────────────────────────────────────────
@@ -386,18 +475,6 @@ export default class ChatPlugin extends Plugin {
     } catch {
       // SecretStorage not available
     }
-  }
-
-  private async readFirstExisting(paths: string[]): Promise<string> {
-    let lastError: unknown;
-    for (const path of paths) {
-      try {
-        return await this.app.vault.adapter.read(path);
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    throw lastError;
   }
 
   private async migrateLegacyPluginData(): Promise<void> {
@@ -491,16 +568,25 @@ export default class ChatPlugin extends Plugin {
     return `${this.pluginDataDir}/chat-state.json`;
   }
 
+  /** A second copy of the chat state, written first (writeChatState). */
+  private get nextChatStatePath(): string {
+    return `${this.pluginDataDir}/chat-state.next.json`;
+  }
+
   private get legacyChatStatePath(): string {
     return `${this.legacyPluginDataDir}/chat-state.json`;
   }
 }
 
-function isPersistedChatState(value: unknown): value is {
+interface PersistedChatState {
+  /** When it was written (ms); tells the newer of the two copies. */
+  savedAt?: number;
   chatHistory?: ChatPlugin["chatHistory"];
   agentMessages?: Parameters<AgentLoop["importMessages"]>[0];
-} {
-  return typeof value === "object" && value !== null;
+}
+
+function isPersistedChatState(value: unknown): value is PersistedChatState {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeSettings(value: unknown): Partial<ChatSettings> {

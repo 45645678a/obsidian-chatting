@@ -6,8 +6,10 @@
 npm test
 ```
 
-Bundles the production provider adapters and agent loop with an in-memory
-vault and mocked `requestUrl`. No credentials or live API calls are needed.
+Runs every `test/*.test.mjs` file (`scripts/test.mjs`). `test/harness.mjs`
+bundles the production modules (provider adapters, agent loop, plugin) with
+a fake Obsidian API, an in-memory vault and mocked `requestUrl`; test files
+import what they need from it. No credentials or live API calls are needed.
 Tests cover assistant output encoding, native thinking/reasoning/search replay,
 read → create/edit flows, parallel tools, cancellation, history restoration,
 Anthropic `pause_turn` and thinking configuration, and OpenAI conversation

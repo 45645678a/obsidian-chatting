@@ -202,7 +202,7 @@ Probably not — keeping the provider list small is a deliberate choice. Two API
 <details>
 <summary><b>Where is chat history stored? Will it sync?</b></summary>
 
-Locally in `<vault>/.obsidian/plugins/chatting-with-ai/chat-state.json`. It is **not** synced by Obsidian Sync (plugin data files are excluded by default). API keys live in the OS keychain via SecretStorage and are also not synced. Attached image data is retained in this local chat history until you clear the conversation.
+Locally in `<vault>/.obsidian/plugins/chatting-with-ai/chat-state.json`, with a second copy in `chat-state.next.json` so a save cut off by a reload or quit loses nothing. If the file can't be read, it is kept as `chat-state.corrupt-<time>.json` instead of being overwritten. It is **not** synced by Obsidian Sync (plugin data files are excluded by default). API keys live in the OS keychain via SecretStorage and are also not synced. Attached image data is retained in this local chat history until you clear the conversation.
 
 </details>
 
