@@ -77,8 +77,9 @@ test('Nothing is saved before the saved chat has been read', async () => {
   await loading;
   assert.deepEqual(texts(plugin), ['Saved before']);
   await plugin.saveChatHistory();
-  assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0].chatHistory.map(e => e.text), ['Saved before']);
+  // This instance has been unloaded; late callbacks must remain unable
+  // to save after a replacement plugin has started.
+  assert.equal(writes.length, 0);
 });
 
 test('A save writes the state twice: chat-state.next.json, then chat-state.json; nothing is deleted or renamed', async () => {
@@ -291,4 +292,21 @@ test('A reloaded instance waits for the prior instance queued unload save before
   await loading;
   assert.deepEqual(next.chatHistory, []);
   assert.deepEqual(JSON.parse(files.get(STATE)).chatHistory, []);
+});
+
+test('A late turn finally callback from an unloaded plugin cannot overwrite the replacement instance', async () => {
+  const { plugin: old, files } = await loadFrom(savedState('Old'));
+  old.onunload();
+  const next = new api.ChatPlugin();
+  next.app = old.app;
+  next.agent = new api.AgentLoop(old.app, settings('anthropic'));
+  await next.loadChatHistory();
+  next.chatHistory = [{ type: 'user', text: 'Fresh turn in replacement' }];
+  await next.saveChatHistory();
+  // A provider promise settles after unload and the old view's finally
+  // block asks its plugin to save again.
+  old.chatHistory.push({ type: 'assistant', text: 'Stale callback' });
+  await old.saveChatHistory();
+  assert.deepEqual(JSON.parse(files.get(STATE)).chatHistory, next.chatHistory);
+  assert.equal(files.get(STATE), files.get(NEXT));
 });

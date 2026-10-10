@@ -12,11 +12,11 @@ Plugin identity, provider authentication, settings defaults, the 1.11.4 minimum 
 
 - Main: seven of the eight incoming persistence tests fail; the legacy-file test passes.
 - Incoming PR: all eight persistence tests pass.
-- Integration: all 80 tests pass, including five additional recovery scenarios and cross-bundle reload coordination.
+- Integration: all 81 tests pass, including five additional recovery scenarios, cross-bundle reload coordination, and protection from an unloaded view's late save.
 - TypeScript, Svelte (zero errors and warnings), production build, and diff checks pass.
 - A separate test with production modules and a real APFS filesystem verifies old-format restore, matching two-copy saves, truncated-main recovery, and an old-version write surviving reupgrade. Its Obsidian host is mocked; this is filesystem evidence, not native-app or phone evidence.
 
-The new coverage includes malformed state and history entries, a lone unreadable backup, equal millisecond/clock rollback ordering, old-version writes with tied mtimes, and a freshly imported plugin bundle waiting for the old instance's queued unload save.
+The new coverage includes malformed state and history entries, a lone unreadable backup, equal millisecond/clock rollback ordering, old-version writes with tied mtimes, a freshly imported plugin bundle waiting for the old instance's queued unload save, and rejection of later saves from an unloaded instance when a pending provider request finally returns.
 
 ## Recovery limits
 

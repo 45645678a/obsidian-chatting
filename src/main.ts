@@ -51,6 +51,8 @@ export default class ChatPlugin extends Plugin {
   private nextChatStateWrite: Promise<void> | null = null;
   /** Monotonic across saves, including a clock adjustment or equal millisecond. */
   private lastChatStateSavedAt = 0;
+  /** Once unloaded, only the already queued final save may finish. */
+  private unloaded = false;
 
   async onload(): Promise<void> {
     await this.waitForChatStateWrites();
@@ -173,6 +175,7 @@ export default class ChatPlugin extends Plugin {
   onunload(): void {
     this.agent?.abort();
     void this.saveChatHistory();
+    this.unloaded = true;
   }
 
   // ─── Chat operations ────────────────────────────────────────────────
@@ -310,7 +313,7 @@ export default class ChatPlugin extends Plugin {
    * write, which takes the state when it starts.
    */
   saveChatHistory(): Promise<void> {
-    if (!this.chatHistoryLoaded) return Promise.resolve();
+    if (!this.chatHistoryLoaded || this.unloaded) return Promise.resolve();
     if (!this.chatStateWrite) return this.startChatStateWrite();
     if (!this.nextChatStateWrite) {
       this.nextChatStateWrite = this.chatStateWrite.then(() => {
