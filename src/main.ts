@@ -44,6 +44,8 @@ export default class ChatPlugin extends Plugin {
   /** The chat-state write in progress, and the one queued after it. */
   private chatStateWrite: Promise<void> | null = null;
   private nextChatStateWrite: Promise<void> | null = null;
+  /** Monotonic across saves, including a clock adjustment or equal millisecond. */
+  private lastChatStateSavedAt = 0;
 
   async onload(): Promise<void> {
     await this.migrateLegacyPluginData();
@@ -331,7 +333,7 @@ export default class ChatPlugin extends Plugin {
     try {
       const state: PersistedChatState = {
         // Which of the two copies is newer when both are whole.
-        savedAt: Date.now(),
+        savedAt: this.lastChatStateSavedAt = Math.max(Date.now(), this.lastChatStateSavedAt + 1),
         chatHistory: this.chatHistory.slice(-100), // Cap at 100 UI messages
         agentMessages: this.agent.exportMessages(80), // Keep complete API turns
       };
@@ -349,6 +351,7 @@ export default class ChatPlugin extends Plugin {
     // Unreadable and not set aside: saving would overwrite it.
     if (state === undefined) return;
     if (state) {
+      this.lastChatStateSavedAt = state.savedAt ?? 0;
       if (Array.isArray(state.chatHistory)) {
         this.chatHistory = state.chatHistory;
       }
@@ -385,13 +388,41 @@ export default class ChatPlugin extends Plugin {
     // newer when Obsidian ended between the two writes, or writing
     // chat-state.json failed (another program had it open).
     let copy: PersistedChatState | null = null;
+    let copyExists = true;
     try {
       copy = await read(this.nextChatStatePath);
     } catch {
-      // None, or cut off while it was written
+      copyExists = await adapter.exists(this.nextChatStatePath).catch(() => true);
     }
-    if (main && copy) return (copy.savedAt ?? 0) > (main.savedAt ?? 0) ? copy : main;
+    if (main && copy) {
+      // 0.4.0 can read this format but drops savedAt when saving. If its
+      // main file was rewritten after our copy, use its changes rather
+      // than resurrecting old messages after an upgrade back to this version.
+      if (main.savedAt === undefined && copy.savedAt !== undefined) {
+        try {
+          const [mainStat, copyStat] = await Promise.all([adapter.stat(path), adapter.stat(this.nextChatStatePath)]);
+          if (mainStat && copyStat && mainStat.mtime > copyStat.mtime) return main;
+        } catch {
+          // A stat failure retains normal timestamp-based recovery.
+        }
+      }
+      return (copy.savedAt ?? 0) > (main.savedAt ?? 0) ? copy : main;
+    }
     if (main ?? copy) return main ?? copy;
+    // Both files are unreadable: keep every existing copy before any
+    // fresh save. This also protects a lone truncated .next file.
+    const unreadable = [exists ? path : null, copyExists ? this.nextChatStatePath : null]
+      .filter((file): file is string => file !== null);
+    for (const file of unreadable) {
+      const name = `${file === path ? "chat-state" : "chat-state.next"}.corrupt-${Date.now()}.json`;
+      try {
+        await adapter.rename(file, `${this.pluginDataDir}/${name}`);
+      } catch {
+        new Notice("The saved chat couldn't be read. The file is left as it is, and the chat isn't saved until Obsidian restarts.");
+        return undefined;
+      }
+      new Notice(`The saved chat couldn't be read. The file was kept as ${name} in the plugin folder; starting with an empty chat.`);
+    }
     if (!exists) {
       try {
         return await read(this.legacyChatStatePath);
@@ -399,14 +430,6 @@ export default class ChatPlugin extends Plugin {
         return null;
       }
     }
-    const name = `chat-state.corrupt-${Date.now()}.json`;
-    try {
-      await adapter.rename(path, `${this.pluginDataDir}/${name}`);
-    } catch {
-      new Notice("The saved chat couldn't be read. The file is left as it is, and the chat isn't saved until Obsidian restarts.");
-      return undefined;
-    }
-    new Notice(`The saved chat couldn't be read. The file was kept as ${name} in the plugin folder; starting with an empty chat.`);
     return null;
   }
 
@@ -586,7 +609,11 @@ interface PersistedChatState {
 }
 
 function isPersistedChatState(value: unknown): value is PersistedChatState {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (!isRecord(value) || Array.isArray(value)) return false;
+  if (!Array.isArray(value.chatHistory) && !Array.isArray(value.agentMessages)) return false;
+  if ("chatHistory" in value && !Array.isArray(value.chatHistory)) return false;
+  if ("agentMessages" in value && !Array.isArray(value.agentMessages)) return false;
+  return !("savedAt" in value) || (typeof value.savedAt === "number" && Number.isFinite(value.savedAt) && value.savedAt >= 0);
 }
 
 function normalizeSettings(value: unknown): Partial<ChatSettings> {

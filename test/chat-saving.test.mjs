@@ -192,3 +192,50 @@ test('Saves never overlap: calls during a write share one next write with the la
   assert.equal(writes.length, 2);
   assert.equal(maxActive, 1);
 });
+
+test('A JSON object with missing or invalid history is kept aside, not accepted as an empty chat', async () => {
+  for (const content of ['{}', '{"chatHistory":null}', '{"agentMessages":"bad"}', '{"chatHistory":[],"savedAt":"bad"}']) {
+    globalThis.__notices = [];
+    const { renames } = await loadFrom(content);
+    assert.equal(renames.length, 1);
+  }
+});
+
+test('An unreadable lone copy is kept aside; a failed backup blocks saving', async () => {
+  const kept = await loadFrom(undefined, { next: 'truncated' });
+  assert.equal(kept.renames[0]?.[0], NEXT);
+  const blocked = await loadFrom(undefined, { next: 'truncated', renameFails: true });
+  await blocked.plugin.saveChatHistory();
+  assert.equal(blocked.files.get(NEXT), 'truncated');
+  assert.equal(blocked.writes.length, 0);
+});
+
+test('Serialized saves have strictly increasing timestamps even in the same millisecond or after a clock rollback', async () => {
+  const { plugin, files } = await loadFrom(savedState('Old', 2000));
+  const now = Date.now;
+  try {
+    Date.now = () => 1000;
+    await plugin.saveChatHistory();
+    const first = JSON.parse(files.get(STATE)).savedAt;
+    await plugin.saveChatHistory();
+    const second = JSON.parse(files.get(STATE)).savedAt;
+    assert.ok(first > 2000);
+    assert.ok(second > first);
+  } finally {
+    Date.now = now;
+  }
+});
+
+test('After a downgrade rewrites the main file, a newer main mtime beats the stale timestamped copy', async () => {
+  const files = new Map([[STATE, savedState('Changed on 0.4.0')], [NEXT, savedState('Stale copy', 2000)]]);
+  const plugin = pluginOn({
+    read: async path => files.get(path),
+    exists: async path => files.has(path),
+    stat: async path => ({ type: 'file', mtime: path === STATE ? 4000 : 3000, ctime: 1, size: 1 }),
+    write: async (path, data) => files.set(path, data),
+  });
+  await plugin.loadChatHistory();
+  assert.deepEqual(texts(plugin), ['Changed on 0.4.0']);
+  await plugin.saveChatHistory();
+  assert.deepEqual(JSON.parse(files.get(NEXT)).chatHistory.map(e => e.text), ['Changed on 0.4.0']);
+});

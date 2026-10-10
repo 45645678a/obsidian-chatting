@@ -16,15 +16,15 @@
 
 - [x] StudioSSD 挂载、UUID、逻辑入口、项目路径与可写性检查通过。
 - [x] 读取项目规则，建立独立整合分支。
-- [ ] 接入来源提交并核验作者归属。
+- [x] 接入来源提交并核验作者归属。
 - [ ] 审查保存、损坏恢复、并发、旧路径读取和回退兼容。
-- [ ] 在 main 复现新增回归测试失败，在整合分支验证通过。
-- [ ] 全部测试、TypeScript、Svelte、生产构建和 diff 检查通过。
+- [x] 在 main 复现新增回归测试失败，在整合分支验证通过。
+- [x] 全部测试、TypeScript、Svelte、生产构建和 diff 检查通过。
 - [ ] 使用测试 Vault 验证 0.4.0 升级与回退，记录桌面和 iPhone 验证范围。
 - [ ] 推送分支并建立可审查的整合 PR，CI 通过。
 - [ ] 对最终代码完成独立审查，处理全部有效发现。
 - [ ] Obsidian Community 对整合分支检查完成，错误处理完毕。
-- [ ] 更新 Todoist Dev，看板状态符合实际。
+- [x] 更新 Todoist Dev，看板状态符合实际。
 - [ ] 合并后 main CI 通过。
 - [ ] 独立准备 0.4.1 发布分支、说明和产物；正式发布与 Community release 检查完成。
 
@@ -33,6 +33,16 @@
 ### 2026-10-10 — 开始
 
 工作区原本位于已完成的 `codex/fix-provider-history`，没有未提交更改。已从当前 main 创建新的整合分支；PR #10 固定到上述两个提交。优先完成代码与离线验证，再执行可用的真实 Obsidian 验证和 Community 分支检查。
+
+### 2026-10-10 — 接入与回归
+
+- `835761d` 使用 merge 接入两个原始提交，作者均为 Thomas Schierl；LICENSE 和 README 补充作者贡献。
+- main 上来源 8 项测试：7 失败、1 通过；原 PR 上 8 项全通过。
+- 独立审查新增四项回归：无有效历史字段的 JSON 对象、孤立损坏副本、同毫秒/时钟回拨保存、旧版本回写后过期副本恢复。修正前四项均失败，修正后全通过。
+- 修正后全部 78 项测试通过；TypeScript、Svelte（零错误零警告）、生产构建、diff 检查通过。
+- 证据目录：`/Volumes/StudioSSD/Developer/BuildScratch/obsidian-chatting/`，含基线失败和修正前后测试日志。
+- Todoist Dev 任务：`6hjF9M778h2gFHr2`，目前 In Progress。
+- 桌面 Obsidian 1.13.7 可用；CLI 未启用，使用隔离测试 Vault 验证，不更改用户主 Vault 的插件或数据。
 
 ## 未完成事项与限制
 

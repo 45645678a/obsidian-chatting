@@ -218,6 +218,8 @@ Issues and PRs welcome. Before opening a PR:
 
 Originally derived from [omarshahine/obsidian-chat](https://github.com/omarshahine/obsidian-chat) (MIT). The original copyright is preserved in `LICENSE`. Chatting with AI is now an independent project with its own roadmap — major rewrites include the agent loop, mobile-parity work, the ChatGPT account provider, and the selection-scope feature.
 
+Thanks to [Thomas Schierl](https://github.com/thomas0schierl) for contributing the chat-saving fixes and shared regression-test harness in [PR #10](https://github.com/o1xhack/obsidian-chatting/pull/10).
+
 ## 📄 License
 
 [MIT](./LICENSE).
