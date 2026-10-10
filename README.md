@@ -202,7 +202,7 @@ Probably not — keeping the provider list small is a deliberate choice. Two API
 <details>
 <summary><b>Where is chat history stored? Will it sync?</b></summary>
 
-Locally in `<vault>/.obsidian/plugins/chatting-with-ai/chat-state.json`. It is **not** synced by Obsidian Sync (plugin data files are excluded by default). API keys live in the OS keychain via SecretStorage and are also not synced. Attached image data is retained in this local chat history until you clear the conversation.
+Locally in `<vault>/.obsidian/plugins/chatting-with-ai/chat-state.json`, with a second copy in `chat-state.next.json` to recover from an interrupted save. If neither copy can be read, existing files are kept as `chat-state.corrupt-<time>.json` or `chat-state.next.corrupt-<time>.json` instead of being overwritten. If a backup cannot be made, saving is disabled for that session and a notice explains why. It is **not** synced by Obsidian Sync (plugin data files are excluded by default). API keys live in the OS keychain via SecretStorage and are also not synced. Attached image data is retained in this local chat history until you clear the conversation.
 
 </details>
 
@@ -217,6 +217,8 @@ Issues and PRs welcome. Before opening a PR:
 ## 🙏 Acknowledgements
 
 Originally derived from [omarshahine/obsidian-chat](https://github.com/omarshahine/obsidian-chat) (MIT). The original copyright is preserved in `LICENSE`. Chatting with AI is now an independent project with its own roadmap — major rewrites include the agent loop, mobile-parity work, the ChatGPT account provider, and the selection-scope feature.
+
+Thanks to [Thomas Schierl](https://github.com/thomas0schierl) for contributing the chat-saving fixes and shared regression-test harness in [PR #10](https://github.com/o1xhack/obsidian-chatting/pull/10).
 
 ## 📄 License
 

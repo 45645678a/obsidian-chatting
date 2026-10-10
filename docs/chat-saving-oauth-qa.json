@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-10",
+  "provider": "chatgpt-oauth",
+  "model": "gpt-6.1-sol",
+  "appVersion": "1.13.7",
+  "vaultName": "ob 插件测试",
+  "installedMainJsSha256": "5a4abc3ee13a31868027c6f7124871226ae5bdebf3e0f2f5984624457a6fe0a8",
+  "copiedFiles": 1771,
+  "copiedBytes": 128398973,
+  "copiedFolders": [
+    "10 Projects",
+    "30 Resources"
+  ],
+  "excludedOtherFolders": true,
+  "copiedMainVaultConfiguration": false,
+  "allSourceAndCopiedFilesUnchangedAfterTests": true,
+  "sharedInodes": 0,
+  "originalTestVaultRegistrationPreserved": true,
+  "liveTests": {
+    "listFiles": true,
+    "readCopiedTemplate": true,
+    "createQAFile": true,
+    "windowReloadRestoresHistory": true,
+    "continuationRecallsPriorMarkerBeforeRead": true,
+    "editQAFile": true,
+    "setPropertiesAndReadback": true,
+    "stopRestoresInput": true,
+    "newTurnAfterStop": true,
+    "matchingStateCopies": true
+  },
+  "physicalIPhoneVerified": false,
+  "anthropicLiveVerified": false,
+  "openaiApiKeyLiveVerified": false
+}
