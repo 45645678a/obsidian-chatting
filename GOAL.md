@@ -26,7 +26,7 @@
 - [x] Obsidian Community 对整合分支检查完成，错误处理完毕。
 - [x] 更新 Todoist Dev，看板状态符合实际。
 - [x] 合并后 main CI 通过（PR #11，2e9730f；发布 PR 的 main CI 另行核验）。
-- [ ] 独立准备 0.4.1 发布分支、说明和产物；正式发布与 Community release 检查完成。
+- [x] 独立准备 0.4.1 发布分支、说明和产物；正式发布与 Community release 检查完成。
 
 ## 进度与证据
 
@@ -86,9 +86,9 @@
 - 本次进度记录提交只修改文档；推送后仍会核对最新 head 的 CI、review 和 Community 状态。
 - 下一步明确：收到隔离测试 Vault 的插件启用确认后，继续原生桌面测试；完成 iPhone QA，再推进 merge、main CI、独立发布分支和正式发布检查。
 
-## 未完成事项与限制
+## 验证范围与历史限制
 
-- 已建立整合 PR #11，代码提交的 CI、独立复审和 Community 分支检查通过；合并前仍需核对最终 head。
+- 整合 PR #11 与发布 PR #12 均已合并；最终发布提交和 Community 正式检查结果见下方收尾记录。
 - 作者报告做过桌面 Obsidian 1.14.4 验证；尚未报告手机验证。我们的验证需单独记录。
 - GOAL 勾选项只在取得对应证据后更新。
 
@@ -125,3 +125,12 @@
 - 发布 head 更新后，重新核对独立审查、零未解决线程、CI 与 Community，再推进合并和正式 Release。
 
 - 第二轮发布复审补充：工具结果条目必须含非空 toolName 与有效 toolResult；四种缺字段/空名称记录已在修正前复现，修正后 83 项、类型检查、Svelte 与构建全部通过。
+
+### 2026-10-10 — 0.4.1 发布完成
+
+- 整合 PR #11：https://github.com/o1xhack/obsidian-chatting/pull/11；发布 PR #12：https://github.com/o1xhack/obsidian-chatting/pull/12，均已合并。作者两条原始提交完整保留在 main 历史，LICENSE/README 与 Release 致谢保留。
+- 最终源提交 09915ea 的 CI、独立复审（无新发现、零未解决线程）和 Community preview 全部通过。83 项自动测试、TypeScript、Svelte（零错误/警告）及生产构建通过。
+- 正式 tag 0.4.1 指向 a6200f220b6d27f619e95c028c0651d7d2730d9d，合并后 main CI 38092695179 成功；发布产物从该提交构建，三个下载文件 SHA-256 均与本地产物一致。
+- 正式版本：https://github.com/o1xhack/obsidian-chatting/releases/tag/0.4.1。Community 正式检查为 Completed，当前版本 0.4.1；无依赖漏洞或可疑网络模式，main.js 可逐字节重建。仅有建议项（构建证明、既有 API 弃用建议与枚举/剪贴板行为提示），无阻断错误。
+- 已在作者 PR #10 通知合入和发布：https://github.com/o1xhack/obsidian-chatting/pull/10#issuecomment-6103015620。
+- 桌面升级/恢复/降级/重载及真实 ChatGPT OAuth 工具续聊已验证。新增嵌套损坏字段使用离线回归验证；物理 iPhone、真实 Anthropic/OpenAI API-key 和强制杀进程未验证，公开发布说明已记录。主 Vault 未安装此次测试或发布产物。
