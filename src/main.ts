@@ -659,6 +659,8 @@ function isChatHistoryEntry(entry: unknown): boolean {
   if (!isRecord(entry) || Array.isArray(entry) || typeof entry.type !== "string") return false;
   if ("text" in entry && typeof entry.text !== "string") return false;
   if (["user", "assistant", "error"].includes(entry.type) && typeof entry.text !== "string") return false;
+  if (entry.type === "tool-result" &&
+    (typeof entry.toolName !== "string" || entry.toolName.length === 0 || !("toolResult" in entry))) return false;
   if ("toolName" in entry && typeof entry.toolName !== "string") return false;
   if ("toolInput" in entry && (!isRecord(entry.toolInput) || Array.isArray(entry.toolInput))) return false;
   if ("toolResult" in entry && (!isRecord(entry.toolResult) || Array.isArray(entry.toolResult) ||
