@@ -613,6 +613,13 @@ function isPersistedChatState(value: unknown): value is PersistedChatState {
   if (!Array.isArray(value.chatHistory) && !Array.isArray(value.agentMessages)) return false;
   if ("chatHistory" in value && !Array.isArray(value.chatHistory)) return false;
   if ("agentMessages" in value && !Array.isArray(value.agentMessages)) return false;
+  if (Array.isArray(value.chatHistory) && !value.chatHistory.every(entry =>
+    isRecord(entry) && typeof entry.type === "string" &&
+    (!("text" in entry) || typeof entry.text === "string"))) return false;
+  if (Array.isArray(value.agentMessages) && !value.agentMessages.every(message =>
+    isRecord(message) && (message.role === "user" || message.role === "assistant") &&
+    (typeof message.content === "string" || (Array.isArray(message.content) &&
+      message.content.every(block => isRecord(block) && typeof block.type === "string"))))) return false;
   return !("savedAt" in value) || (typeof value.savedAt === "number" && Number.isFinite(value.savedAt) && value.savedAt >= 0);
 }
 

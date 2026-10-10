@@ -210,6 +210,19 @@ test('An unreadable lone copy is kept aside; a failed backup blocks saving', asy
   assert.equal(blocked.writes.length, 0);
 });
 
+test('Malformed history entries recover from the good copy instead of crashing plugin startup', async () => {
+  for (const malformed of [
+    { chatHistory: [null] },
+    { chatHistory: [{ type: 'user', text: 42 }] },
+    { agentMessages: [null] },
+    { agentMessages: [{ role: 'user', content: null }] },
+    { agentMessages: [{ role: 'user', content: [null] }] },
+  ]) {
+    const { plugin } = await loadFrom(JSON.stringify(malformed), { next: savedState('Recovered') });
+    assert.deepEqual(texts(plugin), ['Recovered']);
+  }
+});
+
 test('Serialized saves have strictly increasing timestamps even in the same millisecond or after a clock rollback', async () => {
   const { plugin, files } = await loadFrom(savedState('Old', 2000));
   const now = Date.now;

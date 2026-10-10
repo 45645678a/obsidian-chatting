@@ -17,11 +17,11 @@
 - [x] StudioSSD 挂载、UUID、逻辑入口、项目路径与可写性检查通过。
 - [x] 读取项目规则，建立独立整合分支。
 - [x] 接入来源提交并核验作者归属。
-- [ ] 审查保存、损坏恢复、并发、旧路径读取和回退兼容。
+- [x] 审查保存、损坏恢复、并发、旧路径读取和回退兼容。
 - [x] 在 main 复现新增回归测试失败，在整合分支验证通过。
 - [x] 全部测试、TypeScript、Svelte、生产构建和 diff 检查通过。
 - [ ] 使用测试 Vault 验证 0.4.0 升级与回退，记录桌面和 iPhone 验证范围。
-- [ ] 推送分支并建立可审查的整合 PR，CI 通过。
+- [x] 推送分支并建立可审查的整合 PR，CI 通过。
 - [ ] 对最终代码完成独立审查，处理全部有效发现。
 - [ ] Obsidian Community 对整合分支检查完成，错误处理完毕。
 - [x] 更新 Todoist Dev，看板状态符合实际。
@@ -43,6 +43,16 @@
 - 证据目录：`/Volumes/StudioSSD/Developer/BuildScratch/obsidian-chatting/`，含基线失败和修正前后测试日志。
 - Todoist Dev 任务：`6hjF9M778h2gFHr2`，目前 In Progress。
 - 桌面 Obsidian 1.13.7 可用；CLI 未启用，使用隔离测试 Vault 验证，不更改用户主 Vault 的插件或数据。
+
+### 2026-10-10 — 审查与外部检查
+
+- 整合 PR：<https://github.com/o1xhack/obsidian-chatting/pull/11>，基于 `c5932c7` 的 CI 已通过；原 PR #10 的 fork workflow 已批准并通过。
+- Community preview 已提交 `codex/pr-10-chat-saving`，当前扫描固定到 `c5932c7`；后续代码更新后必须重新检查最终提交。
+- 补充损坏历史条目的结构验证，防止合法 JSON 中的空条目使插件启动失败。当前共 79 项测试通过，类型检查、Svelte 和构建通过。
+- 代码范围核对：插件 ID、manifest/minAppVersion、providers/auth/UI/settings、旧路径迁移代码均未改变。
+- 已创建独立测试 Vault：`/Volumes/StudioSSD/Developer/BuildScratch/obsidian-chatting/pr-10-qa-vault`，只包含模拟数据、0.4.0 基线插件及本地 QA 辅助插件。没有发起真实 AI 请求。
+- Obsidian 弹出“信任仓库作者并启用插件”；已在该步骤向用户请求确认，目前等待答复，不能将桌面运行验证标记为完成。
+- iPhone 验证尚未执行。代码、桌面、手机、Community 和发布证据分别记录。
 
 ## 未完成事项与限制
 
