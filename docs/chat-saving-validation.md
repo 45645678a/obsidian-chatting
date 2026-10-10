@@ -28,7 +28,7 @@ After a downgrade, an untimestamped main file whose filesystem mtime is newer th
 
 - Native Obsidian desktop verification in an isolated vault: upgrade from 0.4.0, restore, reload, downgrade, and reupgrade. A local synthetic-only vault is prepared; its plugin trust prompt awaits user confirmation.
 - Physical iPhone persistence/restart verification. Device enumeration alone is not proof, and sim-use cannot drive App Store Obsidian.
-- Clean independent review, CI, and Community branch scan for the final head.
+- The final code commit `069ac1b` has passing CI, a completed clean Codex review (+1; all three findings resolved), and a completed Community branch scan with no errors. Documentation-only follow-up commits still receive fresh CI/review/Community checks before merge.
 - Merge, post-merge main CI, separate 0.4.1 release preparation, asset verification, and formal Community release scan.
 
 GOAL.md is the task progress record. No release is represented as complete by this document.

@@ -22,8 +22,8 @@
 - [x] 全部测试、TypeScript、Svelte、生产构建和 diff 检查通过。
 - [ ] 使用测试 Vault 验证 0.4.0 升级与回退，记录桌面和 iPhone 验证范围。
 - [x] 推送分支并建立可审查的整合 PR，CI 通过。
-- [ ] 对最终代码完成独立审查，处理全部有效发现。
-- [ ] Obsidian Community 对整合分支检查完成，错误处理完毕。
+- [x] 对最终代码完成独立审查，处理全部有效发现。
+- [x] Obsidian Community 对整合分支检查完成，错误处理完毕。
 - [x] 更新 Todoist Dev，看板状态符合实际。
 - [ ] 合并后 main CI 通过。
 - [ ] 独立准备 0.4.1 发布分支、说明和产物；正式发布与 Community release 检查完成。
@@ -76,6 +76,15 @@
 - 新回归确认替代实例保存新会话后，旧实例的延迟收尾不能覆盖它。当前 81 项测试通过，TypeScript、Svelte、生产构建和 diff 检查通过。
 - 卸载中仍未加载完的实例也不能在加载结束后恢复保存；对应来源测试保留启动保护场景并修正卸载后的期待。
 - 未完成 gate 仍是原生桌面 QA、iPhone QA、最终 head 独立复审/Community；main 合并和正式发布尚未执行。
+
+### 2026-10-10 — 代码 gate 通过，等待原生 QA
+
+- 最终代码 `069ac1bf9b7b1b9c219d23cb01ff378967f1a370`：81 项测试、TypeScript、Svelte、生产构建及 CI 均通过。
+- Codex 独立复审在 2026-10-10 11:00 PDT 显示该提交 Completed，并给出 +1；没有新增发现，三个 review thread 全部 resolved。
+- Community 同一代码提交的 branch scan 显示 Completed，无错误、无依赖漏洞；只有未更改的旧设置 API 两项兼容建议。
+- 已在本地准备 0.4.1 候选产物与 SHA-256 清单：`/Volumes/StudioSSD/Developer/BuildScratch/obsidian-chatting/0.4.1-candidate`。仅为 staging，没有创建 tag、正式 Release 或修改 main 的版本。
+- 本次进度记录提交只修改文档；推送后仍会核对最新 head 的 CI、review 和 Community 状态。
+- 下一步明确：收到隔离测试 Vault 的插件启用确认后，继续原生桌面测试；完成 iPhone QA，再推进 merge、main CI、独立发布分支和正式发布检查。
 
 ## 未完成事项与限制
 
