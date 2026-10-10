@@ -62,6 +62,14 @@
 - 当前共 80 项离线测试通过，包含重新加载第二个 bundle 的回归。Community 在 `c5932c7` 上已 Completed、无错误，只有原有设置 API 的两项兼容建议；已提交 `25f14bd` 扫描，最终修正后需再次扫描。
 - `sim-use devices` 可见真实 iPhone，但 Obsidian 属于 App Store 应用，sim-use 不支持其 UI 自动化；没有把模拟器或设备可见状态作为手机 QA 通过证据。
 
+### 2026-10-10 — 当前检查与剩余 gate
+
+- `a0e600e` 保留原始作者提交并完成两项 GitHub 独立审查修正；对应两个 review thread 已 resolved，并重新触发最终提交审查。
+- 80 项测试通过；实际 APFS 文件系统上的旧格式恢复、双副本一致、截断恢复、回退回写后再升级测试也通过。后者仍使用模拟 Obsidian host，不等同于桌面应用运行或真机 QA。
+- `25f14bd` 的 Community branch scan 已 Completed，无错误，仅原有两项设置 API 兼容建议。更新后的最终 head 需再提交 Community 检查。
+- 当前等待用户确认隔离 Vault 的“信任作者并启用插件”提示，随后执行桌面 0.4.0 → 整合版 → 0.4.0 → 整合版验证。
+- 正式 main 合并和 0.4.1 发布尚未执行，必须在已声明 QA gate 完成、最终 head 的 CI/review/Community 通过后推进。不得把“已创建 PR”或模拟环境验证称为整个目标完成。
+
 ## 未完成事项与限制
 
 - 尚未建立最终整合 PR 或触发 Community 分支检查。
