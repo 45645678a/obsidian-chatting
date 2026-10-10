@@ -672,7 +672,9 @@ function isChatHistoryEntry(entry: unknown): boolean {
       typeof image.data === "string" && typeof image.sizeBytes === "number" &&
       Number.isFinite(image.sizeBytes) && image.sizeBytes >= 0)) return false;
     // Svelte's keyed image list cannot render duplicate attachment IDs.
-    if (new Set(entry.images.map(image => image.id)).size !== entry.images.length) return false;
+    const imageIds = entry.images.map((image: unknown) =>
+      isRecord(image) && typeof image.id === "string" ? image.id : "");
+    if (new Set(imageIds).size !== entry.images.length) return false;
   }
   return true;
 }
