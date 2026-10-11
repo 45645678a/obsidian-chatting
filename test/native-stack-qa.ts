@@ -1,7 +1,8 @@
 /** Desktop-only QA helper, installed only in an already-authorized isolated test vault. */
-import { Plugin, Notice, requestUrl, apiVersion } from 'obsidian';
+import { Plugin, Notice, Setting, requestUrl, apiVersion } from 'obsidian';
 const obTransport = require('obsidian');
 import { executeTool } from '../src/tools/executor';
+import { ChatSettingTab, ChatGPTDeviceLoginModal } from '../src/settings';
 import { readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -48,6 +49,27 @@ export default class NativeStackQA extends Plugin {
     const settings = { ...p.settings };
     try {
       Object.assign(p.settings, { provider: 'anthropic', apiKey: 'synthetic-qa-key', model: 'claude-sonnet-4-6', enableWebSearch: false });
+      const host = document.createElement('div'); document.body.appendChild(host);
+      try {
+        const tab: any = new ChatSettingTab(app, p);
+        tab.renderCustomModel(new Setting(host));
+        const input = host.querySelector('input')!; input.value = 'native-custom-model';
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        requirePass(p.settings.model === 'native-custom-model', 'native Enter did not save model');
+        await p.saveSettings(); p.settings.model = 'claude-sonnet-4-6';
+        report.checks.push('native-settings-enter');
+      } finally { host.remove(); }
+      let cancels = 0;
+      const modal = new ChatGPTDeviceLoginModal(app, { deviceAuthId: 'synthetic', userCode: 'QA-CODE', verificationUri: 'https://auth.openai.com/codex/device', intervalMs: 5000 },
+        { promise: new Promise(() => {}), cancel: () => { cancels++; } }, () => {});
+      modal.open();
+      const background = modal.containerEl.querySelector('.modal-bg')!;
+      requirePass(background, 'native login backdrop missing');
+      background.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      background.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      requirePass(modal.containerEl.isConnected && cancels === 0, 'native backdrop cancelled login');
+      modal.close(); requirePass(cancels === 1, 'native normal close ignored');
+      report.checks.push('native-login-backdrop-and-close');
       view.clearConversation();
       let calls = 0;
       obTransport.requestUrl = async () => ({ status: 200, headers: {}, json: ++calls === 1 ? { content: [{ type: 'tool_use', id: 'edit', name: 'edit_document', input: { path: note, operation: 'find_replace', find: 'task', content: 'DONE' } }], stop_reason: 'tool_use' } : { content: [{ type: 'text', text: 'NATIVE-STACK-159' }], stop_reason: 'end_turn' } });
@@ -91,6 +113,7 @@ export default class NativeStackQA extends Plugin {
     } finally {
       obTransport.requestUrl = priorTransport;
       Object.assign(p.settings, settings);
+      await p.saveSettings();
     }
     report.passed = true; report.windowReload = 'pending';
     await adapter.write(`${QA}/native-report.json`, JSON.stringify(report, null, 2));
