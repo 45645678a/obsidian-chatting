@@ -110,9 +110,9 @@ test('A folder the selected note is in can\'t be renamed or deleted', async () =
   assert.equal(result.isError, false);
 });
 
-test('Text typed before the selection moves it: the copy nearest its offset changes, not the first one', async () => {
+test('Text typed before the selection moves it: the snapshot keeps the original copy', async () => {
   const note = '## Monday\n- [ ] call Bob\n\n## Friday\n- [ ] call Bob\n';
-  const scope = { filePath: 'Review.md', text: '- [ ] call Bob', from: note.lastIndexOf('- [ ] call Bob') };
+  const scope = { filePath: 'Review.md', text: '- [ ] call Bob', from: note.lastIndexOf('- [ ] call Bob'), sourceText: note };
   // After selecting, the user adds a line just above the selected copy.
   const { app, files } = vault({ 'Review.md': note.replace('## Friday\n', '## Friday\n- [ ] buy milk\n') });
   const result = await run(app, 'edit_document', { path: 'Review.md', operation: 'find_replace', find: 'call Bob', content: 'call Bob about the quote' }, scope);
@@ -123,7 +123,7 @@ test('Text typed before the selection moves it: the copy nearest its offset chan
 
 test('A line typed above both copies (more than the gap between them): the selected copy, counted from the top, changes', async () => {
   const note = '# List\n\n- [ ] Buy milk\n- [ ] Call Ana\n- [ ] Buy milk\n';
-  const scope = { filePath: 'Review.md', text: 'Buy milk', from: note.lastIndexOf('Buy milk'), occurrence: 1 };
+  const scope = { filePath: 'Review.md', text: 'Buy milk', from: note.lastIndexOf('Buy milk'), occurrence: 1, sourceText: note };
   // After selecting the second copy, the user types a line under the heading.
   const typed = note.replace('# List\n', '# List\nTyped above the list after selecting.\n');
   const { app, files } = vault({ 'Review.md': typed });
@@ -180,7 +180,7 @@ test('selectionScope records where the selection starts, also when it was made b
     posToOffset: pos => lines.slice(0, pos.line).reduce((sum, line) => sum + line.length + 1, 0) + pos.ch,
   };
   const scope = api.selectionScope(editor, SELECTED, 'Review.md');
-  assert.deepEqual(scope, { text: SELECTED, filePath: 'Review.md', from: NOTE.indexOf(SELECTED), occurrence: 0 });
+  assert.deepEqual(scope, { text: SELECTED, filePath: 'Review.md', from: NOTE.indexOf(SELECTED), occurrence: 0, sourceText: NOTE });
   // A repeated text: the copies before the selected one are counted.
   const repeated = '- a\n- b\n- a\n';
   const second = { getValue: () => repeated, getCursor: () => ({ line: 2, ch: 0 }), posToOffset: pos => pos.line * 4 + pos.ch };
@@ -213,4 +213,70 @@ test('In a chat turn with a selection the model can\'t change the rest of the no
     : response('anthropic', [text('Done.')]));
   await agent.run('Now rewrite the whole note', callbacks(), null);
   assert.equal(files.get('Review.md'), 'all new');
+});
+
+
+test('A removed selected copy never redirects an edit to another identical copy', async () => {
+  const original = 'first: task\nsecond: task\n';
+  const scope = { filePath: 'Review.md', text: 'task', from: original.lastIndexOf('task'), occurrence: 1, sourceText: original };
+  const changed = 'first: task\nsecond: gone\n';
+  const { app, files } = vault({ 'Review.md': changed });
+  const result = await run(app, 'edit_document', { path: 'Review.md', operation: 'find_replace', find: 'task', content: 'DONE' }, scope);
+  assert.equal(result.isError, true);
+  assert.equal(files.get('Review.md'), changed);
+});
+
+test('Inserting a duplicate above the selection preserves the original selected copy', async () => {
+  const original = 'heading\nselected: task\n';
+  const scope = { filePath: 'Review.md', text: 'task', from: original.indexOf('task'), occurrence: 0, sourceText: original };
+  const changed = 'task\n' + original;
+  const { app, files } = vault({ 'Review.md': changed });
+  const result = await run(app, 'edit_document', { path: 'Review.md', operation: 'find_replace', find: 'task', content: 'DONE' }, scope);
+  assert.equal(result.isError, false);
+  assert.equal(files.get('Review.md'), 'task\nheading\nselected: DONE\n');
+});
+
+
+test('Deleting the whole selection finishes and subsequent edits are refused', async () => {
+  const { app, files } = vault({ 'Review.md': 'before selected after' });
+  const scope = { filePath: 'Review.md', text: 'selected', from: 7, sourceText: 'before selected after' };
+  const first = await run(app, 'edit_document', { operation: 'find_replace', find: 'selected', content: '' }, scope);
+  assert.equal(first.isError, false);
+  assert.equal(files.get('Review.md'), 'before  after');
+  const second = await run(app, 'edit_document', { operation: 'find_replace', find: 'after', content: 'oops' }, scope);
+  assert.equal(second.isError, true);
+  assert.equal(files.get('Review.md'), 'before  after');
+});
+
+test('A failed vault write leaves the selection tracking unchanged for a retry', async () => {
+  const original = 'before selected after';
+  const { app, files } = vault({ 'Review.md': original });
+  const scope = { filePath: 'Review.md', text: 'selected', from: 7, sourceText: original };
+  const before = { ...scope };
+  const process = app.vault.process;
+  app.vault.process = async (file, fn) => { fn(files.get(file.path)); throw new Error('write failed'); };
+  const input = { operation: 'find_replace', find: 'selected', content: 'done' };
+  assert.equal((await run(app, 'edit_document', input, scope)).isError, true);
+  assert.deepEqual(scope, before);
+  app.vault.process = process;
+  assert.equal((await run(app, 'edit_document', input, scope)).isError, false);
+  assert.equal(files.get('Review.md'), 'before done after');
+});
+
+
+test('Removing an adjacent identical selection is ambiguous and cannot edit its neighbour', async () => {
+  const original = 'tasktask';
+  const { app, files } = vault({ 'Review.md': 'task' });
+  const scope = { filePath: 'Review.md', text: 'task', from: 0, sourceText: original };
+  assert.equal((await run(app, 'edit_document', { operation: 'find_replace', find: 'task', content: 'DONE' }, scope)).isError, true);
+  assert.equal(files.get('Review.md'), 'task');
+});
+
+test('CRLF additions before a repeated selection relocate from the original editor offset', async () => {
+  const original = 'task\nheading\ntask\n';
+  const changed = 'intro\n' + original;
+  const { app, files } = vault({ 'Review.md': changed.replace(/\n/g, '\r\n') });
+  const scope = { filePath: 'Review.md', text: 'task', from: original.lastIndexOf('task'), sourceText: original };
+  assert.equal((await run(app, 'edit_document', { operation: 'find_replace', find: 'task', content: 'DONE' }, scope)).isError, false);
+  assert.equal(files.get('Review.md'), 'intro\r\ntask\r\nheading\r\nDONE\r\n');
 });

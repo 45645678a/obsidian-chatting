@@ -59,7 +59,7 @@ Highlight text in any note, right-click, choose **Send selection to chat**. The 
 You: tighten this — keep my voice
 ```
 
-The agent uses find-and-replace scoped to the selection text, and the tools enforce it for that turn: in that note, only the highlighted copy of the text can change; rewriting the whole note, inserting, setting properties, or renaming or deleting it (or a folder it's in) is refused. Other notes stay editable, and renaming one of them still updates links to it in this note.
+The agent uses find-and-replace scoped to the selection text, and the tools enforce it for that turn: in that note, only the highlighted copy of the text can change; rewriting the whole note, inserting, setting properties, or renaming or deleting it (or a folder it's in) is refused. The editor snapshot keeps the selected copy anchored when text is added above it. If the selected text changed or its identity is ambiguous, the tools ask you to select it again. Other notes stay editable, and renaming one of them still updates links to it in this note.
 
 ## 🛠️ 14 vault-native tools
 

@@ -35,7 +35,7 @@ sign-in (shared token refreshes that keep the refresh token and respect
 Disconnect, one refresh and retry after a 401, device-code polling through
 network errors, and the login dialog ignoring background clicks).
 `selection-scope.test.mjs`: the selection scope the tools enforce (the
-selected copy of repeated text, CRLF notes, refusals outside the selection).
+selected copy of repeated text, snapshot relocation, CRLF notes, safe deletion, failed-write retries, and refusals outside the selection).
 These tests do not establish live-service or physical-iOS behavior.
 
 Two Node scripts that exercise the ChatGPT/Codex Responses endpoint

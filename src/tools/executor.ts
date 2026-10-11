@@ -111,29 +111,36 @@ function scopeGuard(
 
 /** How many copies of `text` start before `end` in `data` (not overlapping). */
 export function copiesBefore(data: string, text: string, end: number): number {
+  if (!text) return 0;
   let count = 0;
   for (let at = data.indexOf(text); at !== -1 && at < end; at = data.indexOf(text, at + text.length)) count++;
   return count;
 }
 
-/**
- * Where the selected text is in the note now: at its offset; else, if text
- * typed elsewhere moved it, the same copy counted from the top; else the
- * copy nearest to the offset; -1 if gone.
- */
-function selectionStart(data: string, text: string, from?: number, occurrence?: number): number {
-  if (from !== undefined && data.startsWith(text, from)) return from;
-  // Text typed above the selection moves it: the same copy, counted from the top.
-  if (occurrence !== undefined) {
-    let at = data.indexOf(text);
-    for (let i = 0; i < occurrence && at !== -1; i++) at = data.indexOf(text, at + text.length);
-    if (at !== -1) return at;
+/** Relocate through one contiguous edit outside the original range; otherwise fail closed. */
+function selectionStart(data: string, text: string, from?: number, sourceText?: string): number {
+  if (!text) return -1;
+  if (sourceText !== undefined && from !== undefined) {
+    if (!sourceText.startsWith(text, from)) return -1;
+    if (sourceText === data) return from;
+    // Losing a duplicate makes its identity ambiguous, even when an identical
+    // neighbour now occupies the old offset. Ask for a new selection.
+    if (copiesBefore(data, text, data.length) < copiesBefore(sourceText, text, sourceText.length)) return -1;
+    let prefix = 0;
+    while (prefix < sourceText.length && prefix < data.length && sourceText[prefix] === data[prefix]) prefix++;
+    let suffix = 0;
+    while (suffix < sourceText.length && suffix < data.length &&
+      sourceText[sourceText.length - 1 - suffix] === data[data.length - 1 - suffix]) suffix++;
+    const oldEnd = sourceText.length - suffix;
+    const newEnd = data.length - suffix;
+    const start = oldEnd <= from ? from + newEnd - oldEnd : prefix >= from + text.length ? from : -1;
+    return start >= 0 && data.startsWith(text, start) ? start : -1;
   }
-  if (from === undefined) return data.indexOf(text);
-  const after = data.indexOf(text, from);
-  const before = data.lastIndexOf(text, from);
-  if (before === -1 || after === -1) return Math.max(before, after);
-  return from - before <= after - from ? before : after;
+  // Older callers without a snapshot may use an exact offset or a unique
+  // match, but must never guess between repeated copies after a change.
+  if (from !== undefined) return data.startsWith(text, from) ? from : -1;
+  const at = data.indexOf(text);
+  return at !== -1 && data.indexOf(text, at + 1) === -1 ? at : -1;
 }
 
 /** The position in `data` of an editor offset (the editor counts \r\n as one character). */
@@ -158,24 +165,29 @@ async function editInScope(
   // Set in the callback; the cast keeps TypeScript from narrowing it to "done".
   let outcome = "done" as "done" | "outside" | "lost";
   let multiple = false;
+  let nextScope: SelectionScope | undefined;
   await app.vault.process(file, (data) => {
     // The editor's selection and offset use \n line breaks; a note saved
     // with \r\n is matched and written with \r\n.
     const crlf = data.includes("\r\n");
     const inNote = (text: string) => (crlf ? text.replace(/\r?\n/g, "\r\n") : text);
     const selected = inNote(scope.text);
-    const from = crlf && scope.from !== undefined ? crlfOffset(data, scope.from) : scope.from;
-    const start = selectionStart(data, selected, from, scope.occurrence);
+    const sourceText = scope.sourceText === undefined ? undefined : inNote(scope.sourceText);
+    const from = crlf && scope.from !== undefined ? crlfOffset(sourceText ?? data, scope.from) : scope.from;
+    const start = selectionStart(data, selected, from, sourceText);
     const at = scope.text.indexOf(find);
     if (start === -1 || at === -1) {
       outcome = start === -1 ? "lost" : "outside";
       return data;
     }
     multiple = scope.text.indexOf(find, at + 1) !== -1;
-    scope.text = scope.text.slice(0, at) + content + scope.text.slice(at + find.length);
-    scope.from = crlf ? data.slice(0, start).replace(/\r\n/g, "\n").length : start;
-    const changed = data.slice(0, start) + inNote(scope.text) + data.slice(start + selected.length);
-    scope.occurrence = copiesBefore(changed, inNote(scope.text), start);
+    const nextText = scope.text.slice(0, at) + content + scope.text.slice(at + find.length);
+    const changed = data.slice(0, start) + inNote(nextText) + data.slice(start + selected.length);
+    nextScope = { ...scope, text: nextText,
+      from: crlf ? data.slice(0, start).replace(/\r\n/g, "\n").length : start,
+      occurrence: copiesBefore(changed, inNote(nextText), start),
+      sourceText: changed.replace(/\r\n/g, "\n"),
+    };
     return changed;
   });
   if (outcome === "lost") {
@@ -190,6 +202,7 @@ async function editInScope(
       isError: true,
     };
   }
+  if (nextScope) Object.assign(scope, nextScope);
   const note = multiple ? "[Note: Multiple matches found in the selection, replacing first occurrence.]\n" : "";
   return { result: `${note}Successfully replaced text in the selection in ${file.path}.`, isError: false };
 }

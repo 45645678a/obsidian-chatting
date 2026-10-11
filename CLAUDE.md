@@ -47,7 +47,7 @@ src/
 - **Anthropic `cache_control`**: Breakpoints on system prompt and last tool definition.
 - **Per-provider API keys**: Stored as `ochat-api-key-anthropic` / `ochat-api-key-openai` in `SecretStorage`.
 - **In-memory chat persistence**: `AgentLoop` and `chatHistory` live on the plugin instance, surviving view open/close cycles.
-- **Selection scope**: Injected into user message with scoping instructions, and enforced by `executeTool` for that turn: in the selected note only `edit_document` `find_replace` inside the selection (located by its offset, `SelectionScope.from`; if the note changed, by which copy it is, `occurrence`, else the copy nearest to the offset) succeeds; other changes to that note, or renaming/deleting a folder it is in, are refused. Other notes stay editable.
+- **Selection scope**: Injected into user message with scoping instructions, and enforced by `executeTool` for that turn: in the selected note only `edit_document` `find_replace` inside the selection (located by its offset and in-memory editor snapshot; changes outside the range can relocate it, while changed or ambiguous selections are refused) succeeds; other changes to that note, or renaming/deleting a folder it is in, are refused. Other notes stay editable.
 
 ## Build
 

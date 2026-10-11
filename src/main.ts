@@ -33,7 +33,8 @@ type ChatPersistenceApp = App & { [CHAT_STATE_WRITE]?: Promise<void> };
 /** The editor's selection as a scope, with where it starts in the note. */
 export function selectionScope(editor: Editor, text: string, filePath: string): SelectionScope {
   const from = editor.posToOffset(editor.getCursor("from"));
-  return { text, filePath, from, occurrence: copiesBefore(editor.getValue(), text, from) };
+  const sourceText = editor.getValue().replace(/\r\n/g, "\n");
+  return { text, filePath, from, occurrence: copiesBefore(sourceText, text, from), sourceText };
 }
 
 export default class ChatPlugin extends Plugin {
