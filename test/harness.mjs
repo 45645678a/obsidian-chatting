@@ -16,11 +16,18 @@ export const bundled = await build({
     export { sendChatGPTOAuthMessage, setChatGPTOAuthService } from './src/api/chatgpt-oauth';
     export { buildResponsesInput, fromResponsesOutput } from './src/api/responses-format';
     export { default as ChatPlugin } from './src/main';
+    export { executeTool } from './src/tools/executor';
+    export { TOOL_DEFINITIONS } from './src/tools/registry';
+    export { ObsidianChatView } from './src/ui/chat-view';
+    export { ChatGPTOAuthService } from './src/auth/chatgptOAuth';
+    export { ChatGPTOAuthStore } from './src/auth/chatgptOAuthStore';
+    export { ChatGPTDeviceLoginModal } from './src/settings';
+    export { selectionScope } from './src/main';
   `, resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, write: false, platform: 'node', format: 'esm',
   plugins: [{ name: 'obsidian-test-transport', setup(build) {
     build.onResolve({ filter: /^obsidian$/ }, () => ({ path: 'obsidian', namespace: 'test' }));
-    // The chat view's Svelte UI isn't under test; main.ts only needs it to import.
+    // The Svelte UI isn't bundled: chat view tests give the view a fake component.
     build.onResolve({ filter: /^svelte$|\.svelte$/ }, () => ({ path: 'svelte', namespace: 'test-svelte' }));
     build.onLoad({ filter: /.*/, namespace: 'test-svelte' }, () => ({ contents: 'export const mount = () => ({}); export const unmount = () => {}; export default {};', loader: 'js' }));
     build.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `
@@ -30,7 +37,7 @@ export const bundled = await build({
       export class Menu {}
       export const MarkdownRenderer = { render: async () => {} };
       export class Modal {}
-      export class PluginSettingTab {}
+      export class PluginSettingTab { containerEl = { addClass() {} }; hide() {} }
       export class Setting {}
       export const requireApiVersion = () => globalThis.__supportsNewObsidian === true;
       export class Notice { constructor(message) { (globalThis.__notices ??= []).push(message); } }
@@ -38,6 +45,18 @@ export const bundled = await build({
       export class TFile { constructor(path) { this.path = path; this.extension = 'md'; } }
       export const normalizePath = path => path;
       export const requestUrl = request => globalThis.__providerRequest(request);
+      // Obsidian's rule: a "---" line at the start up to the next "---" line.
+      export function getFrontMatterInfo(content) {
+        const none = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
+        const open = /^---\\r?\\n/.exec(content);
+        if (!open) return none;
+        const close = /---(\\r?\\n|$)/g;
+        close.lastIndex = open[0].length;
+        let match = close.exec(content);
+        while (match && content[match.index - 1] !== '\\n') match = close.exec(content);
+        if (!match) return none;
+        return { exists: true, frontmatter: content.slice(open[0].length, match.index), from: open[0].length, to: match.index, contentStart: close.lastIndex };
+      }
     `, loader: 'js' }));
   } }],
 });
@@ -80,7 +99,7 @@ export function vaultApp() {
       configDir: '.obsidian', adapter: { append: async () => {} },
       getName: () => 'Test vault',
       getMarkdownFiles: () => [...files.keys()].map(path => ({ path })),
-      getFileByPath: path => files.has(path) ? { path } : null,
+      getFileByPath: path => files.has(path) ? { path, extension: path.slice(path.lastIndexOf('.') + 1) } : null,
       getFolderByPath: () => ({}),
       cachedRead: async file => files.get(file.path),
       create: async (path, content) => { assert.ok(!files.has(path)); files.set(path, content); return { path }; },

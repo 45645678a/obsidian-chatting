@@ -27,6 +27,7 @@ import type {
 } from "../types";
 import { CHATGPT_OAUTH_DEFAULT_MODEL } from "../types";
 import { buildResponsesInput, fromResponsesOutput } from "./responses-format";
+import { ProviderError, retryAfterMs } from "./errors";
 import {
   ChatGPTOAuthError,
   type ChatGPTOAuthService,
@@ -85,6 +86,7 @@ export async function sendChatGPTOAuthMessage(
   messages: UnifiedMessage[],
   tools: UnifiedToolDef[],
   systemPrompt: string,
+  shouldStop: () => boolean = () => false,
 ): Promise<UnifiedResponse> {
   if (!oauthService) {
     throw new ChatGPTOAuthError(
@@ -92,9 +94,10 @@ export async function sendChatGPTOAuthMessage(
     );
   }
 
+  const service = oauthService;
   let credential;
   try {
-    credential = await oauthService.getUsableCredential();
+    credential = await service.getUsableCredential();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new ChatGPTOAuthError(
@@ -163,12 +166,29 @@ export async function sendChatGPTOAuthMessage(
 
   // Codex backend only accepts streaming requests. We always send
   // `stream: true` and parse the buffered SSE body client-side.
-  return sendOnce(
-    { ...baseBody, stream: true },
-    credential.accessToken,
-    credential.accountId,
-    identity,
-  );
+  const body = { ...baseBody, stream: true };
+  const checkCancelled = () => {
+    if (shouldStop()) throw new Error("Request cancelled.");
+  };
+  checkCancelled();
+  try {
+    return await sendOnce(body, credential.accessToken, credential.accountId, identity);
+  } catch (e) {
+    // A rejected token (401), e.g. revoked before it expired: refresh once
+    // and retry once. A second 401, or a failed refresh, keeps the
+    // "reconnect" error.
+    if (!(e instanceof ProviderError) || e.status !== 401) throw e;
+    checkCancelled();
+    let renewed;
+    try {
+      renewed = await service.renewRejected(credential);
+    } catch {
+      throw e;
+    }
+    checkCancelled();
+    if (!renewed) throw e;
+    return sendOnce(body, renewed.accessToken, renewed.accountId, identity);
+  }
 }
 
 async function sendOnce(
@@ -208,8 +228,10 @@ async function sendOnce(
   }
 
   if (response.status === 401 || response.status === 403) {
-    throw new ChatGPTOAuthError(
+    // The status lets the caller refresh the token once after a 401.
+    throw new ProviderError(
       `ChatGPT OAuth session rejected by the server (HTTP ${response.status}). Please reconnect your ChatGPT account in settings.`,
+      response.status,
     );
   }
 
@@ -236,11 +258,12 @@ async function sendOnce(
       getNestedString(json, ["error", "message"]) ??
       response.text?.slice(0, 300) ??
       `HTTP ${response.status}`;
-    const err = new ChatGPTOAuthError(
+    // The Codex backend names a plan's usage limit in `error.type` (also a 429).
+    const code = getNestedString(json, ["error", "code"]) ?? getNestedString(json, ["error", "type"]);
+    throw new ProviderError(
       `ChatGPT OAuth request failed (${response.status}): ${apiMsg}. The Codex backend may not accept the selected model or request format. Try reconnecting, picking a different model, or switching to OpenAI API Key.`,
+      response.status, code, retryAfterMs(response.headers),
     );
-    (err as Error & { status?: number }).status = response.status;
-    throw err;
   }
 
   // Two possible response shapes:
@@ -298,6 +321,7 @@ function parseResponseBody(response: {
   const itemByIndex = new Map<string | number, Record<string, unknown>>();
   let completedResponse: Record<string, unknown> | null = null;
   let failureMessage: string | null = null;
+  let failureCode: string | undefined;
 
   for (const evt of events) {
     const type = stringValue(evt.type);
@@ -313,12 +337,15 @@ function parseResponseBody(response: {
       completedResponse = { ...(asOptionalRecord(evt.response) ?? {}), status: "incomplete" };
     } else if (type === "response.failed") {
       failureMessage = getNestedString(evt.response, ["error", "message"]) ?? "ChatGPT OAuth response failed";
+      failureCode = getNestedString(evt.response, ["error", "code"]);
     } else if (type === "error" && typeof evt.message === "string") {
       failureMessage = evt.message;
+      failureCode = typeof evt.code === "string" ? evt.code : undefined;
     }
   }
 
-  if (failureMessage) throw new ChatGPTOAuthError(failureMessage);
+  // Status 0: the error came inside a response that had started.
+  if (failureMessage) throw new ProviderError(failureMessage, 0, failureCode);
 
   if (completedResponse) {
     // Synthesize a Responses-API-shaped object from the streamed pieces.

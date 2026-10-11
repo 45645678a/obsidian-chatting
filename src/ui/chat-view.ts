@@ -8,6 +8,38 @@ import { getModelDisplayName } from "../settings";
 
 export const VIEW_TYPE_CHAT = "ochatting-view";
 
+const SAVED_INPUT_TEXT = 300;
+const SAVED_INPUT_ITEMS = 10;
+const SAVED_INPUT_KEYS = 20;
+
+/**
+ * A tool call's input as saved with its card, for display only: strings
+ * cut to 300 characters, lists to 10 items and objects to 20 keys, so long
+ * note content or canvas lists don't bloat `chat-state.json`.
+ */
+function savedToolInput(input: Record<string, unknown>): Record<string, unknown> {
+  const cap = (value: unknown): unknown => {
+    if (typeof value === "string") {
+      if (value.length <= SAVED_INPUT_TEXT) return value;
+      // Don't keep the first half of a surrogate pair (e.g. an emoji).
+      const end = /[\uD800-\uDBFF]/.test(value[SAVED_INPUT_TEXT - 1]) ? SAVED_INPUT_TEXT - 1 : SAVED_INPUT_TEXT;
+      return `${value.slice(0, end)}... (${value.length} characters)`;
+    }
+    if (Array.isArray(value)) {
+      const items = value.slice(0, SAVED_INPUT_ITEMS).map(cap);
+      return value.length > SAVED_INPUT_ITEMS ? [...items, `... (${value.length - SAVED_INPUT_ITEMS} more)`] : items;
+    }
+    if (typeof value === "object" && value !== null) {
+      const entries = Object.entries(value);
+      const kept = Object.fromEntries(entries.slice(0, SAVED_INPUT_KEYS).map(([key, item]) => [key, cap(item)]));
+      if (entries.length > SAVED_INPUT_KEYS) kept["..."] = `(${entries.length - SAVED_INPUT_KEYS} more)`;
+      return kept;
+    }
+    return value;
+  };
+  return cap(input) as Record<string, unknown>;
+}
+
 interface ChatContainerProps {
   app: App;
   component: ObsidianChatView;
@@ -27,6 +59,7 @@ interface ChatContainerApi extends Record<string, unknown> {
   showThinking(): void;
   hideThinking(): void;
   showAskUser(question: string): Promise<string>;
+  cancelAskUser(): void;
   setInputEnabled(enabled: boolean): void;
   clearMessages(): void;
   focus(): void;
@@ -45,10 +78,15 @@ export class ObsidianChatView extends ItemView {
   private plugin: ChatPlugin;
   private chatContainer: ChatContainerApi | undefined;
   private running = false;
+  private runVersion = 0;
+  /** Resolves once onOpen() has mounted the chat UI, or failed to. */
+  readonly ready: Promise<void>;
+  private markReady!: () => void;
 
   constructor(leaf: WorkspaceLeaf, plugin: ChatPlugin) {
     super(leaf);
     this.plugin = plugin;
+    this.ready = new Promise((resolve) => { this.markReady = resolve; });
   }
 
   getViewType(): string {
@@ -66,6 +104,16 @@ export class ObsidianChatView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    try {
+      this.mountChat();
+    } finally {
+      // Also when mounting failed: commands waiting for the view go on
+      // (its methods do nothing without the UI) instead of waiting forever.
+      this.markReady();
+    }
+  }
+
+  private mountChat(): void {
     const container = this.contentEl;
     container.empty();
     container.addClass("ochatting-view-container");
@@ -112,16 +160,11 @@ export class ObsidianChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    this.plugin.agent.abort();
+    this.handleStop();
     if (this.chatContainer) {
       await unmount(this.chatContainer);
       this.chatContainer = undefined;
     }
-  }
-
-  /** Export the full transcript for debugging */
-  getTranscript(): string {
-    return this.plugin.agent.exportTranscript();
   }
 
   /** Programmatically send a message */
@@ -159,7 +202,14 @@ export class ObsidianChatView extends ItemView {
       return;
     }
 
-    const chat = this.chatContainer!;
+    const chat = this.chatContainer;
+    if (!chat) {
+      // No UI (mounting it failed): nothing to show the turn in.
+      new Notice("The chat panel couldn't be shown, so the message wasn't sent.");
+      return;
+    }
+    const version = ++this.runVersion;
+    const isCurrent = () => version === this.runVersion;
     const history = this.plugin.chatHistory;
 
     this.running = true;
@@ -167,7 +217,7 @@ export class ObsidianChatView extends ItemView {
     history.push({ type: "user", text, images });
     chat.setInputEnabled(false);
 
-    const toolCallIds = new Map<string, number>();
+    const toolCalls = new Map<string, { id: number; input: Record<string, unknown> }>();
 
     try {
       await this.plugin.agent.run(text, {
@@ -177,16 +227,13 @@ export class ObsidianChatView extends ItemView {
         onToolCall: (name, input) => {
           chat.hideThinking();
           if (name === "ask_user") return;
-          const msgId = chat.addToolCall(name, input);
-          toolCallIds.set(`latest-${name}`, msgId);
+          toolCalls.set(name, { id: chat.addToolCall(name, input), input });
         },
         onToolResult: (name, result: ToolResult) => {
           if (name === "ask_user") return;
-          const msgId = toolCallIds.get(`latest-${name}`);
-          if (msgId !== undefined) {
-            chat.updateToolResult(msgId, name, result);
-          }
-          history.push({ type: "tool-result", toolName: name, toolInput: {}, toolResult: result });
+          const call = toolCalls.get(name);
+          if (call) chat.updateToolResult(call.id, name, result);
+          history.push({ type: "tool-result", toolName: name, toolInput: savedToolInput(call?.input ?? {}), toolResult: result });
         },
         onResponse: (text) => {
           chat.hideThinking();
@@ -196,7 +243,13 @@ export class ObsidianChatView extends ItemView {
         onAskUser: async (question) => {
           chat.hideThinking();
           chat.setInputEnabled(true);
+          // The chat shows the question and the typed answer; keep both in
+          // the history so they are still there after a reload.
+          history.push({ type: "assistant", text: question });
           const answer = await chat.showAskUser(question);
+          // Empty: Stop or Clear dropped the question.
+          if (!answer || !isCurrent()) return "";
+          history.push({ type: "user", text: answer });
           chat.setInputEnabled(false);
           return answer;
         },
@@ -207,23 +260,29 @@ export class ObsidianChatView extends ItemView {
         },
       }, selection, images);
     } catch (e) {
+      if (!isCurrent()) return;
       const msg = e instanceof Error ? e.message : String(e);
       chat.addError(`Unexpected error: ${msg}`);
       history.push({ type: "error", text: `Unexpected error: ${msg}` });
     } finally {
-      this.running = false;
-      chat.setInputEnabled(true);
-      chat.focus();
-      // Persist after each turn
-      void this.plugin.saveChatHistory();
+      if (isCurrent()) {
+        this.running = false;
+        chat.setInputEnabled(true);
+        chat.focus();
+        // Persist after each turn
+        void this.plugin.saveChatHistory();
+      }
     }
   }
 
   private handleStop(): void {
+    this.runVersion++;
     this.plugin.agent.abort();
     this.running = false;
     const chat = this.chatContainer;
     if (chat) {
+      // Otherwise the next message would answer the stopped turn's question.
+      chat.cancelAskUser();
       chat.hideThinking();
       chat.setInputEnabled(true);
       chat.focus();
@@ -232,10 +291,11 @@ export class ObsidianChatView extends ItemView {
   }
 
   private handleClear(): void {
-    this.plugin.agent.abort();
+    this.runVersion++;
     this.plugin.agent.clear();
     this.plugin.chatHistory = [];
     this.chatContainer?.clearMessages();
+    this.chatContainer?.cancelAskUser();
     this.running = false;
     this.chatContainer?.setInputEnabled(true);
     // Clear persisted state

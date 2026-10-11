@@ -10,6 +10,7 @@ import {
 } from "obsidian";
 import type { ChatSettings, SelectionScope, ImageAttachment } from "./types";
 import { DEFAULT_SETTINGS, DEFAULT_PROVIDER_MODELS } from "./types";
+import { copiesBefore } from "./tools/executor";
 import { ChatSettingTab, getModelDisplayName } from "./settings";
 import { ObsidianChatView, VIEW_TYPE_CHAT } from "./ui/chat-view";
 import { AgentLoop } from "./agent/loop";
@@ -28,6 +29,13 @@ const LEGACY_CHATGPT_OAUTH_SECRET_KEY = `${LEGACY_PLUGIN_ID}-chatgpt-oauth`;
 // the same key without persisting promises or adding a file lock.
 const CHAT_STATE_WRITE = Symbol.for("chatting-with-ai-pending-chat-state-write");
 type ChatPersistenceApp = App & { [CHAT_STATE_WRITE]?: Promise<void> };
+
+/** The editor's selection as a scope, with where it starts in the note. */
+export function selectionScope(editor: Editor, text: string, filePath: string): SelectionScope {
+  const from = editor.posToOffset(editor.getCursor("from"));
+  const sourceText = editor.getValue().replace(/\r\n/g, "\n");
+  return { text, filePath, from, occurrence: copiesBefore(sourceText, text, from), sourceText };
+}
 
 export default class ChatPlugin extends Plugin {
   settings: ChatSettings = DEFAULT_SETTINGS;
@@ -127,12 +135,12 @@ export default class ChatPlugin extends Plugin {
     // Editor command: chat about selected text (conditional, only when text is selected)
     this.addCommand({
       id: "send-selection",
-      name: "Send selection to Chat",
+      name: "Send selection to chat",
       editorCheckCallback: (checking: boolean, editor: Editor, ctx: MarkdownFileInfo) => {
         const sel = editor.getSelection();
         if (!sel || sel.length === 0) return false;
         if (checking) return true;
-        const scope: SelectionScope = { text: sel, filePath: ctx.file?.path ?? "" };
+        const scope = selectionScope(editor, sel, ctx.file?.path ?? "");
         void this.openChatWithSelection(scope);
         return true;
       },
@@ -158,12 +166,13 @@ export default class ChatPlugin extends Plugin {
       this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, info: MarkdownFileInfo) => {
         const sel = editor.getSelection();
         if (sel && sel.length > 0) {
+          // Read now, while the selection the menu was opened on is current.
+          const scope = selectionScope(editor, sel, info.file?.path ?? "");
           menu.addItem((item) =>
             item
-              .setTitle("Send selection to Chat")
+              .setTitle("Send selection to chat")
               .setIcon("message-circle")
               .onClick(() => {
-                const scope: SelectionScope = { text: sel, filePath: info.file?.path ?? "" };
                 void this.openChatWithSelection(scope);
               })
           );
@@ -199,41 +208,30 @@ export default class ChatPlugin extends Plugin {
     return "Please configure your API key in Chatting with AI settings.";
   }
 
-  private async openChat(): Promise<void> {
+  /**
+   * Opens the chat view and resolves with it once its UI is mounted; null
+   * when the provider isn't set up (with a notice) or no chat view opened.
+   */
+  private async openChat(): Promise<ObsidianChatView | null> {
     if (!this.isProviderConfigured()) {
       new Notice(this.notConfiguredMessage());
-      return;
+      return null;
     }
-    await this.activateView();
+    return this.activateView();
   }
 
   /** Open chat and immediately send a message */
   private async openChatWithMessage(message: string): Promise<void> {
-    if (!this.isProviderConfigured()) {
-      new Notice(this.notConfiguredMessage());
-      return;
-    }
-    await this.activateView();
-    const view = this.getChatView();
-    if (view) {
-      window.setTimeout(() => view.sendMessage(message), 100);
-    }
+    const view = await this.openChat();
+    view?.sendMessage(message);
   }
 
   /** Open chat with a selection scope (shows pill, user types their own question) */
   private async openChatWithSelection(selection: SelectionScope): Promise<void> {
-    if (!this.isProviderConfigured()) {
-      new Notice(this.notConfiguredMessage());
-      return;
-    }
-    await this.activateView();
-    const view = this.getChatView();
-    if (view) {
-      window.setTimeout(() => {
-        view.setSelection(selection);
-        view.focus();
-      }, 100);
-    }
+    const view = await this.openChat();
+    if (!view) return;
+    view.setSelection(selection);
+    view.focus();
   }
 
   private async chatAboutActiveNote(): Promise<void> {
@@ -245,23 +243,26 @@ export default class ChatPlugin extends Plugin {
     await this.openChatWithMessage(`Tell me about ${file.path}`);
   }
 
-  /** Open or reveal the chat view in the right sidebar (both desktop and mobile). */
-  private async activateView(): Promise<void> {
+  /**
+   * Open or reveal the chat view in the right sidebar (both desktop and
+   * mobile); resolves with the view once its UI is mounted.
+   */
+  private async activateView(): Promise<ObsidianChatView | null> {
     const { workspace } = this.app;
-    const existing = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
-
-    if (existing.length > 0) {
-      await workspace.revealLeaf(existing[0]);
-      return;
+    let leaf = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+    if (!leaf) {
+      // Right sidebar on both desktop and mobile.
+      // On mobile, this slides in as a panel from the right edge.
+      const right = workspace.getRightLeaf(false);
+      if (!right) return null;
+      await right.setViewState({ type: VIEW_TYPE_CHAT, active: true });
+      leaf = right;
     }
-
-    // Right sidebar on both desktop and mobile.
-    // On mobile, this slides in as a panel from the right edge.
-    const leaf = workspace.getRightLeaf(false);
-    if (leaf) {
-      await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-      await workspace.revealLeaf(leaf);
-    }
+    // Also loads a deferred view (Obsidian 1.7.2+).
+    await workspace.revealLeaf(leaf);
+    if (!(leaf.view instanceof ObsidianChatView)) return null;
+    await leaf.view.ready;
+    return leaf.view;
   }
 
   /** Get the active ObsidianChatView using proper instanceof check (deferred view safe) */
@@ -275,20 +276,14 @@ export default class ChatPlugin extends Plugin {
     return null;
   }
 
+  /** Copy the conversation's API history as Markdown (for debugging); works with the chat panel closed. */
   private shareTranscript(): void {
-    const view = this.getChatView();
-    if (!view) {
-      new Notice("No active conversation.");
-      return;
-    }
-
-    const transcript = view.getTranscript();
-    if (!transcript || transcript.endsWith("## Conversation\n\n")) {
+    if (this.agent.isEmpty()) {
       new Notice("Conversation is empty.");
       return;
     }
 
-    navigator.clipboard.writeText(transcript).then(() => {
+    navigator.clipboard.writeText(this.agent.exportTranscript()).then(() => {
       new Notice("Transcript copied to clipboard.");
     }).catch(() => {
       new Notice("Failed to copy transcript.");
@@ -685,7 +680,11 @@ function normalizeSettings(value: unknown): Partial<ChatSettings> {
   if (isProvider(value.provider)) settings.provider = value.provider;
   if (typeof value.apiKey === "string") settings.apiKey = value.apiKey;
   if (typeof value.model === "string") settings.model = value.model;
-  if (typeof value.maxIterations === "number") settings.maxIterations = value.maxIterations;
+  // Within the settings field's range, 1 to 100, however data.json was edited;
+  // below 1 (0 used to mean the default) keeps the default.
+  if (typeof value.maxIterations === "number" && Number.isFinite(value.maxIterations) && value.maxIterations >= 1) {
+    settings.maxIterations = Math.min(100, Math.floor(value.maxIterations));
+  }
   if (typeof value.enableWebSearch === "boolean") settings.enableWebSearch = value.enableWebSearch;
   settings.modelCatalog = normalizeCatalogState(value.modelCatalog);
   return settings;

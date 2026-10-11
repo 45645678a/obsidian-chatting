@@ -1,5 +1,20 @@
-import { App, TFile, normalizePath } from "obsidian";
-import type { ToolResult } from "../types";
+import { App, TFile, getFrontMatterInfo, normalizePath } from "obsidian";
+import type { SelectionScope, ToolResult } from "../types";
+
+/** Images the read tools refuse (SVG is text, so they read it). */
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif", "ico"];
+
+/**
+ * Files the read tools refuse because their text would be useless to the
+ * model. Best effort by extension: an unlisted binary file is still read.
+ */
+const BINARY_EXTENSIONS = [
+  "pdf", "epub", "zip", "gz", "tar", "7z", "rar", "jar", "iso", "dmg", "exe", "dll", "so", "dylib", "bin",
+  "mp3", "wav", "m4a", "ogg", "flac", "aac", "opus",
+  "webm", "mp4", "m4v", "mov", "mkv", "avi", "ogv", "3gp", "mpeg", "mpg",
+  "woff", "woff2", "ttf", "otf", "eot", "psd", "raw",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "sqlite", "db",
+];
 
 type AskUserCallback = (question: string) => Promise<string>;
 
@@ -16,17 +31,20 @@ export async function executeTool(
   app: App,
   toolName: string,
   input: Record<string, unknown>,
-  onAskUser: AskUserCallback
+  onAskUser: AskUserCallback,
+  scope?: SelectionScope
 ): Promise<ToolResult> {
   if (Object.prototype.hasOwnProperty.call(input, "_raw")) {
     return { result: "Invalid tool arguments: provide a valid JSON object and retry.", isError: true };
   }
   try {
+    const outOfScope = scope && scopeGuard(app, toolName, input, scope);
+    if (outOfScope) return outOfScope;
     switch (toolName) {
       case "read_document":
         return await readDocument(app, input);
       case "edit_document":
-        return await editDocument(app, input);
+        return await editDocument(app, input, scope);
       case "search_vault":
         return await searchVault(app, input);
       case "read_file":
@@ -60,6 +78,135 @@ export async function executeTool(
   }
 }
 
+// ─── Selection scope ────────────────────────────────────────────────────────
+// A turn sent with a selection may change only the selected text of that
+// note (the instruction in the user message alone isn't always followed).
+// edit_document's find_replace works inside the selection; the other ways
+// to change that note are refused. Other notes stay editable.
+
+const scopeRefusal = (path: string): ToolResult => ({
+  result: `Not changed: the user selected text in ${path}, and only that selection may change. Use edit_document with operation find_replace and text from within the selection.`,
+  isError: true,
+});
+
+/** Refuses tools other than edit_document that would change the scoped note. */
+function scopeGuard(
+  app: App,
+  toolName: string,
+  input: Record<string, unknown>,
+  scope: SelectionScope
+): ToolResult | null {
+  if (toolName === "rename_file" || toolName === "delete_file") {
+    // The note itself, or a folder it is in (the vault root included).
+    const given = optionalString(input.path);
+    const path = given === undefined ? undefined : normalizePath(given).replace(/\/+$/, "");
+    const touches = path !== undefined && (path === scope.filePath || path === "" || scope.filePath.startsWith(`${path}/`));
+    return touches ? scopeRefusal(scope.filePath) : null;
+  }
+  if (toolName === "set_properties" && resolveFile(app, optionalString(input.path))?.path === scope.filePath) {
+    return scopeRefusal(scope.filePath);
+  }
+  return null;
+}
+
+/** How many copies of `text` start before `end` in `data` (not overlapping). */
+export function copiesBefore(data: string, text: string, end: number): number {
+  if (!text) return 0;
+  let count = 0;
+  for (let at = data.indexOf(text); at !== -1 && at < end; at = data.indexOf(text, at + text.length)) count++;
+  return count;
+}
+
+/** Relocate through one contiguous edit outside the original range; otherwise fail closed. */
+function selectionStart(data: string, text: string, from?: number, sourceText?: string): number {
+  if (!text) return -1;
+  if (sourceText !== undefined && from !== undefined) {
+    if (!sourceText.startsWith(text, from)) return -1;
+    if (sourceText === data) return from;
+    // Losing a duplicate makes its identity ambiguous, even when an identical
+    // neighbour now occupies the old offset. Ask for a new selection.
+    if (copiesBefore(data, text, data.length) < copiesBefore(sourceText, text, sourceText.length)) return -1;
+    let prefix = 0;
+    while (prefix < sourceText.length && prefix < data.length && sourceText[prefix] === data[prefix]) prefix++;
+    let suffix = 0;
+    while (suffix < sourceText.length && suffix < data.length &&
+      sourceText[sourceText.length - 1 - suffix] === data[data.length - 1 - suffix]) suffix++;
+    const oldEnd = sourceText.length - suffix;
+    const newEnd = data.length - suffix;
+    const start = oldEnd <= from ? from + newEnd - oldEnd : prefix >= from + text.length ? from : -1;
+    return start >= 0 && data.startsWith(text, start) ? start : -1;
+  }
+  // Older callers without a snapshot may use an exact offset or a unique
+  // match, but must never guess between repeated copies after a change.
+  if (from !== undefined) return data.startsWith(text, from) ? from : -1;
+  const at = data.indexOf(text);
+  return at !== -1 && data.indexOf(text, at + 1) === -1 ? at : -1;
+}
+
+/** The position in `data` of an editor offset (the editor counts \r\n as one character). */
+function crlfOffset(data: string, offset: number): number {
+  let at = 0;
+  for (let i = 0; i < offset && at < data.length; i++) at += data.startsWith("\r\n", at) ? 2 : 1;
+  return at;
+}
+
+/**
+ * find_replace inside the selection: `find` is looked up in the selected
+ * text (not the first match in the note), and the scope then holds the
+ * changed text, so later edits in the turn stay inside it too.
+ */
+async function editInScope(
+  app: App,
+  file: TFile,
+  scope: SelectionScope,
+  find: string,
+  content: string
+): Promise<ToolResult> {
+  // Set in the callback; the cast keeps TypeScript from narrowing it to "done".
+  let outcome = "done" as "done" | "outside" | "lost";
+  let multiple = false;
+  let nextScope: SelectionScope | undefined;
+  await app.vault.process(file, (data) => {
+    // The editor's selection and offset use \n line breaks; a note saved
+    // with \r\n is matched and written with \r\n.
+    const crlf = data.includes("\r\n");
+    const inNote = (text: string) => (crlf ? text.replace(/\r?\n/g, "\r\n") : text);
+    const selected = inNote(scope.text);
+    const sourceText = scope.sourceText === undefined ? undefined : inNote(scope.sourceText);
+    const from = crlf && scope.from !== undefined ? crlfOffset(sourceText ?? data, scope.from) : scope.from;
+    const start = selectionStart(data, selected, from, sourceText);
+    const at = scope.text.indexOf(find);
+    if (start === -1 || at === -1) {
+      outcome = start === -1 ? "lost" : "outside";
+      return data;
+    }
+    multiple = scope.text.indexOf(find, at + 1) !== -1;
+    const nextText = scope.text.slice(0, at) + content + scope.text.slice(at + find.length);
+    const changed = data.slice(0, start) + inNote(nextText) + data.slice(start + selected.length);
+    nextScope = { ...scope, text: nextText,
+      from: crlf ? data.slice(0, start).replace(/\r\n/g, "\n").length : start,
+      occurrence: copiesBefore(changed, inNote(nextText), start),
+      sourceText: changed.replace(/\r\n/g, "\n"),
+    };
+    return changed;
+  });
+  if (outcome === "lost") {
+    return {
+      result: `Not changed: the selected text is no longer in ${file.path} as it was selected. Tell the user; they can select it again and resend.`,
+      isError: true,
+    };
+  }
+  if (outcome === "outside") {
+    return {
+      result: `Not changed: 'find' must be text from within the user's selection in ${file.path}; nothing outside it may change.`,
+      isError: true,
+    };
+  }
+  if (nextScope) Object.assign(scope, nextScope);
+  const note = multiple ? "[Note: Multiple matches found in the selection, replacing first occurrence.]\n" : "";
+  return { result: `${note}Successfully replaced text in the selection in ${file.path}.`, isError: false };
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Resolve a file from path or active file */
@@ -78,11 +225,16 @@ async function ensureParentFolder(app: App, filePath: string): Promise<void> {
   }
 }
 
-function findFrontmatterEnd(content: string): number {
-  if (!content.startsWith("---")) return -1;
-  const secondDash = content.indexOf("---", 3);
-  if (secondDash === -1) return -1;
-  return secondDash + 3;
+/** An error for an image or binary file, whose text would be garbage; null for text. */
+function refuseNonText(file: TFile, tool: string): ToolResult | null {
+  const extension = file.extension.toLowerCase();
+  if (IMAGE_EXTENSIONS.includes(extension)) {
+    return { result: `${file.path} is an image; ${tool} reads text only. To show it, the user can attach it to a chat message.`, isError: true };
+  }
+  if (BINARY_EXTENSIONS.includes(extension)) {
+    return { result: `${file.path} is a binary file; ${tool} reads text only.`, isError: true };
+  }
+  return null;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -97,8 +249,9 @@ function requiredRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
+/** A JSON object; arrays and null are not. */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ─── Tool Implementations ───────────────────────────────────────────────────
@@ -112,6 +265,8 @@ async function readDocument(
   if (!file) {
     return { result: path ? `File not found: ${path}` : "No active document open.", isError: true };
   }
+  const refusal = refuseNonText(file, "read_document");
+  if (refusal) return refusal;
 
   // cachedRead() is faster for display-only reads
   const content = await app.vault.cachedRead(file);
@@ -120,10 +275,17 @@ async function readDocument(
 
 async function editDocument(
   app: App,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  scope?: SelectionScope
 ): Promise<ToolResult> {
   const operation = requiredString(input.operation);
-  const content = requiredString(input.content);
+  // A missing `content` must not become "": replace_all would blank the
+  // note and find_replace would delete the found text, both reported as
+  // success. An explicit "" (delete on purpose) is fine.
+  if (typeof input.content !== "string") {
+    return { result: "'content' is required for edit_document (use \"\" to delete text).", isError: true };
+  }
+  const content = input.content;
   const find = optionalString(input.find);
   const position = optionalString(input.position);
 
@@ -133,9 +295,15 @@ async function editDocument(
     return { result: path ? `File not found: ${path}` : "No active document open.", isError: true };
   }
 
+  if (scope && file.path === scope.filePath) {
+    if (operation !== "find_replace") return scopeRefusal(file.path);
+    if (!find) return { result: "'find' parameter is required for find_replace.", isError: true };
+    return await editInScope(app, file, scope, find, content);
+  }
+
   switch (operation) {
     case "replace_all":
-      await app.vault.modify(file, content);
+      await app.vault.process(file, () => content);
       return { result: `Replaced all content in ${file.path}.`, isError: false };
 
     case "find_replace": {
@@ -175,26 +343,20 @@ async function editDocument(
       if (!position) {
         return { result: "'position' parameter is required for insert.", isError: true };
       }
+      if (position !== "beginning" && position !== "end" && position !== "after_frontmatter") {
+        return { result: `Unknown position: ${position}. Use beginning, end or after_frontmatter.`, isError: true };
+      }
 
       await app.vault.process(file, (data) => {
-        switch (position) {
-          case "beginning":
-            return content + "\n" + data;
-          case "end":
-            return data + "\n" + content;
-          case "after_frontmatter": {
-            const fmEnd = findFrontmatterEnd(data);
-            if (fmEnd === -1) return content + "\n" + data;
-            return data.substring(0, fmEnd) + "\n" + content + data.substring(fmEnd);
-          }
-          default:
-            return data; // Unknown position, return unchanged
-        }
+        if (position === "end") return data + "\n" + content;
+        // After the frontmatter as Obsidian reads it (0 without one), so a
+        // "---" inside a value doesn't count.
+        const start = position === "after_frontmatter" ? getFrontMatterInfo(data).contentStart : 0;
+        const head = data.substring(0, start);
+        // A note that ends right at the closing --- has no line break after it.
+        const separator = head && !head.endsWith("\n") ? "\n" : "";
+        return head + separator + content + "\n" + data.substring(start);
       });
-
-      if (position !== "beginning" && position !== "end" && position !== "after_frontmatter") {
-        return { result: `Unknown position: ${position}`, isError: true };
-      }
 
       return { result: `Inserted content at ${position} of ${file.path}.`, isError: false };
     }
@@ -260,6 +422,9 @@ async function readFile(
   if (!file) {
     return { result: `File not found: ${path}`, isError: true };
   }
+
+  const refusal = refuseNonText(file, "read_file");
+  if (refusal) return refusal;
 
   const content = await app.vault.cachedRead(file);
   return { result: content, isError: false };
@@ -471,7 +636,9 @@ function getCurrentDatetime(): ToolResult {
     second: "2-digit",
     timeZoneName: "short",
   });
-  const dateOnly = now.toISOString().split("T")[0]; // YYYY-MM-DD for daily notes
+  // YYYY-MM-DD in the user's time zone, as daily notes are named.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const dateOnly = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
   return {
     result: `Local: ${local}\nISO: ${iso}\nDate: ${dateOnly}`,

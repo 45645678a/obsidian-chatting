@@ -16,8 +16,15 @@ import { buildContext } from "./context";
 import { buildSystemPrompt, buildContextMessage } from "./system-prompt";
 import { trimHistory } from "./history";
 
-const MAX_CONVERSATION_LENGTH = 50;
-const KEEP_RECENT = 40;
+/**
+ * The API history: saving keeps the last 80 messages. Before a turn, a
+ * history over 80 messages is cut to the last 60, so it is cut every few
+ * turns, not on each; in between it stays the same array and OpenAI can
+ * chain to its previous response. Both keep whole user turns, so they
+ * round up: a long turn can keep a few more messages.
+ */
+const MAX_CONVERSATION_LENGTH = 80;
+const KEEP_RECENT = 60;
 
 // Debug logging: writes transcript to the vault's plugin config folder
 const DEBUG = false;
@@ -48,7 +55,7 @@ export class AgentLoop {
   private messages: UnifiedMessage[] = [];
   private app: App;
   private settings: ChatSettings;
-  private aborted = false;
+  /** Counts runs and stops; a run whose number is no longer current is stopped. */
   private runVersion = 0;
 
   constructor(app: App, settings: ChatSettings) {
@@ -58,29 +65,32 @@ export class AgentLoop {
 
   /** Abort a running loop (e.g. user navigates away) */
   abort(): void {
-    this.aborted = true;
     this.runVersion++;
   }
 
-  /** Clear conversation history */
+  /** Stop a running turn and clear the history. */
   clear(): void {
-    this.runVersion++;
+    this.abort();
     this.messages = [];
-    this.aborted = false;
     clearOpenAIState();
     clearChatGPTOAuthState();
   }
 
   /** Export API messages for persistence */
-  exportMessages(limit = 80): UnifiedMessage[] {
+  exportMessages(limit = MAX_CONVERSATION_LENGTH): UnifiedMessage[] {
     return trimHistory(this.messages, limit);
   }
 
-  /** Restore API messages from persistence */
+  /** Restore API messages from persistence, as many as saving keeps */
   importMessages(messages: UnifiedMessage[]): void {
-    this.messages = trimHistory(messages, KEEP_RECENT);
+    this.messages = trimHistory(messages, MAX_CONVERSATION_LENGTH);
     clearOpenAIState();
     clearChatGPTOAuthState();
+  }
+
+  /** Nothing in the API history yet. */
+  isEmpty(): boolean {
+    return this.messages.length === 0;
   }
 
   /** Export the full conversation as a readable markdown transcript */
@@ -150,9 +160,11 @@ export class AgentLoop {
     selection?: SelectionScope | null,
     images: ImageAttachment[] = []
   ): Promise<void> {
-    this.aborted = false;
     const version = ++this.runVersion;
-    const isStopped = () => this.aborted || version !== this.runVersion;
+    const isStopped = () => version !== this.runVersion;
+    // This turn's selection: the tools change only that text of its note (a
+    // copy, since its text follows the edits).
+    const scope = selection ? { ...selection } : undefined;
     // Keep one provider/model/credential configuration for this entire turn.
     const turnSettings = { ...this.settings };
 
@@ -166,10 +178,10 @@ export class AgentLoop {
       fullMessage = [
         contextPrefix,
         "",
-        `[Selection scope: The user has selected text in ${selection.filePath}. Work only within this selection. When using edit_document, use find_replace with text from within this selection. Do not modify text outside the selection.]`,
+        `[Selection scope: The user has selected text in ${selection.filePath}. Work only within this selection. When using edit_document, use find_replace with text from within this selection; 'find' is matched inside the selection, so no surrounding context is needed. Do not modify text outside the selection.]`,
         "",
         `Selected text:`,
-        `> ${selection.text}`,
+        selection.text.split(/\r?\n/).map((line) => `> ${line}`).join("\n"),
         "",
         userMessage,
       ].join("\n");
@@ -286,7 +298,8 @@ export class AgentLoop {
           this.app,
           tc.name!,
           tc.input!,
-          callbacks.onAskUser
+          callbacks.onAskUser,
+          scope
         );
 
         if (isStopped()) return;

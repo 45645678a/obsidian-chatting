@@ -2,7 +2,7 @@ import type { UnifiedToolDef } from "../types";
 
 /**
  * All 9 tools the agent can call. Deliberately minimal:
- * read, edit, search, create, list, read-any, rename, delete, and ask-user.
+ * read, edit, search, create, list, rename, delete, and ask-user.
  */
 export const TOOL_DEFINITIONS: UnifiedToolDef[] = [
   {
@@ -78,7 +78,7 @@ export const TOOL_DEFINITIONS: UnifiedToolDef[] = [
   },
   {
     name: "read_file",
-    description: "Read the full content of any file in the vault by its path.",
+    description: "Read the full content of any text file in the vault by its path. Images and other binary files are refused.",
     inputSchema: {
       type: "object",
       properties: {

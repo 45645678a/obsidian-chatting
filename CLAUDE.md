@@ -47,7 +47,7 @@ src/
 - **Anthropic `cache_control`**: Breakpoints on system prompt and last tool definition.
 - **Per-provider API keys**: Stored as `ochat-api-key-anthropic` / `ochat-api-key-openai` in `SecretStorage`.
 - **In-memory chat persistence**: `AgentLoop` and `chatHistory` live on the plugin instance, surviving view open/close cycles.
-- **Selection scope**: Injected into user message with scoping instructions. Model uses `find_replace` within selection text.
+- **Selection scope**: Injected into user message with scoping instructions, and enforced by `executeTool` for that turn: in the selected note only `edit_document` `find_replace` inside the selection (located by its offset and in-memory editor snapshot; changes outside the range can relocate it, while changed or ambiguous selections are refused) succeeds; other changes to that note, or renaming/deleting a folder it is in, are refused. Other notes stay editable.
 
 ## Build
 
@@ -66,7 +66,7 @@ npm run svelte-check   # Svelte check
 | read_document | `vault.cachedRead()` | Falls back to active file if no path |
 | edit_document | `vault.process()` | Atomic read-modify-write |
 | search_vault | `getMarkdownFiles()` + `cachedRead()` | Linear scan, capped |
-| read_file | `vault.getFileByPath()` + `cachedRead()` | Any file type |
+| read_file | `vault.getFileByPath()` + `cachedRead()` | Text files; images and binary files refused |
 | create_file | `vault.create()` | Auto-creates parent folders |
 | list_files | `vault.getFiles()` | Capped at 100 results |
 | rename_file | `fileManager.renameFile()` | Updates all links |

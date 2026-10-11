@@ -95,7 +95,6 @@ export interface UnifiedResponse {
 
 export interface ConversationContext {
   activeFile: string | null;
-  activeFileContent: string | null;
   selection: string | null;
   vaultName: string;
   fileCount: number;
@@ -108,6 +107,12 @@ export interface SelectionScope {
   text: string;
   /** Path to the file containing the selection */
   filePath: string;
+  /** Where the selection starts in the note (character offset), so a repeated text isn't mistaken for it. */
+  from?: number;
+  /** How many copies of the text come before the selection in the note (0: it is the first). */
+  occurrence?: number;
+  /** In-memory editor snapshot used to relocate safely; never sent to the model. */
+  sourceText?: string;
 }
 
 // ─── Tool Execution ─────────────────────────────────────────────────────────
