@@ -80,3 +80,5 @@ GitHub 上 5 个原始 head 的 check 均成功，GraphQL 回读均没有 review
 最初一轮 QA 脚本因只读 requestUrl 赋值失败，没有被记为通过；之后改为独立装载代理。那一轮写入的模拟 provider 设置及聊天已从备份恢复，模拟 key 仅在确认等于本次固定测试值时清除；OAuth SecretStorage 登录保留。后续模拟设置保存使用无副作用替身，以防测试 key 写入真实 SecretStorage。
 
 Community 检查将固定到提交上述证据后的最终 head；当前尚未记为通过。
+
+补充原生桌面 mobile emulation：在 390px 视口下，5 个可见设置控件容器均为 318px，scrollWidth 与实际宽度相同，flex-wrap 为 wrap；没有控件溢出。模拟模式已关闭。这不等同于物理 iPhone 验证。证据：[mobile emulation](pr-14-18-mobile-emulation.json)。

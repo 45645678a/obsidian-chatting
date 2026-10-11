@@ -1,0 +1,33 @@
+{
+  "scope": "native desktop mobile emulation; not a physical iPhone",
+  "viewport": 390,
+  "phone": true,
+  "controls": [
+    {
+      "width": 318,
+      "scroll": 318,
+      "wrap": "wrap"
+    },
+    {
+      "width": 318,
+      "scroll": 318,
+      "wrap": "wrap"
+    },
+    {
+      "width": 318,
+      "scroll": 318,
+      "wrap": "wrap"
+    },
+    {
+      "width": 318,
+      "scroll": 318,
+      "wrap": "wrap"
+    },
+    {
+      "width": 318,
+      "scroll": 318,
+      "wrap": "wrap"
+    }
+  ],
+  "passed": true
+}
