@@ -137,7 +137,7 @@ const describeError = (response: { status: number; text?: string; json?: unknown
 
 export class ChatGPTOAuthService {
   /** The refresh in flight; parallel requests share it. */
-  private refreshing: Promise<ChatGPTOAuthCredential> | null = null;
+  private refreshing: { token: string; promise: Promise<ChatGPTOAuthCredential> } | null = null;
 
   constructor(private readonly store: ChatGPTOAuthStore) {}
 
@@ -231,6 +231,7 @@ export class ChatGPTOAuthService {
           continue;
         }
 
+        if (cancelled) throw new ChatGPTOAuthError("ChatGPT login was cancelled.");
         if (response.status >= 200 && response.status < 300) {
           const data = response.json as Partial<DeviceTokenSuccess>;
           if (
@@ -245,6 +246,7 @@ export class ChatGPTOAuthService {
             codeVerifier: data.code_verifier,
             redirectUri: DEVICE_REDIRECT_URI,
           });
+          if (cancelled) throw new ChatGPTOAuthError("ChatGPT login was cancelled.");
           this.store.set(credential);
           return credential;
         }
@@ -270,10 +272,12 @@ export class ChatGPTOAuthService {
   refreshCredential(
     credential: Pick<ChatGPTOAuthCredential, "refreshToken" | "accountId">,
   ): Promise<ChatGPTOAuthCredential> {
-    this.refreshing ??= this.refresh(credential).finally(() => {
-      this.refreshing = null;
+    if (this.refreshing?.token === credential.refreshToken) return this.refreshing.promise;
+    const promise = this.refresh(credential).finally(() => {
+      if (this.refreshing?.promise === promise) this.refreshing = null;
     });
-    return this.refreshing;
+    this.refreshing = { token: credential.refreshToken, promise };
+    return promise;
   }
 
   /**
@@ -321,10 +325,10 @@ export class ChatGPTOAuthService {
    * refresh fails.
    */
   async renewRejected(
-    rejected: Pick<ChatGPTOAuthCredential, "accessToken">,
+    rejected: Pick<ChatGPTOAuthCredential, "accessToken" | "accountId">,
   ): Promise<ChatGPTOAuthCredential | null> {
     const current = this.store.get();
-    if (!current) return null;
+    if (!current || current.accountId !== rejected.accountId) return null;
     if (current.accessToken !== rejected.accessToken) return current;
     return this.refreshCredential(current);
   }

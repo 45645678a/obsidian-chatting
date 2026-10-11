@@ -175,12 +175,17 @@ test('The device-login dialog ignores clicks on the dimmed background; Escape st
       modal.contentEl = { empty() {} };
       modal.ignoreBackgroundClicks();
       assert.equal(background.capture, true);
-      return { modal, handle, press: () => background.pointerdown() };
+      return { modal, handle, press: () => {
+        const event = { prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; } };
+        background.pointerdown(event);
+        assert.equal(event.prevented, true);
+        assert.equal(event.stopped, true);
+      } };
     };
 
     // A click on the background: Obsidian asks to close, the dialog stays and keeps polling.
     let { modal, handle, press } = open();
-    press(); modal.close();
+    press(); // The backdrop event never reaches Obsidian's close handler.
     assert.equal(modal.closed, undefined);
     assert.equal(handle.cancels, 0);
     // Escape or the close button: closes and cancels the poll.
@@ -190,7 +195,7 @@ test('The device-login dialog ignores clicks on the dimmed background; Escape st
 
     // A press that didn't turn into a close request doesn't swallow a later Escape.
     ({ modal, handle, press } = open());
-    press(); timers.at(-1)();
+    press();
     modal.close();
     assert.equal(modal.closed, true);
     assert.equal(handle.cancels, 1);
@@ -199,3 +204,70 @@ test('The device-login dialog ignores clicks on the dimmed background; Escape st
     delete ModalBase.close;
   }
 });
+
+
+test('A new sign-in refresh does not inherit the old session refresh promise', async () => {
+  const { oauth, store } = signedIn();
+  const pending = heldTokenRequests();
+  const old = oauth.getUsableCredential();
+  const oldRejected = assert.rejects(old, /changed while the token was refreshed/);
+  await until(() => pending.length === 1);
+  store.set({ ...store.get(), accessToken: 'new-access', refreshToken: 'new-refresh' });
+  const next = oauth.getUsableCredential();
+  // Allow a second token request to start without resolving the first.
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(pending.length, 2);
+  pending[0]({ status: 200, json: { access_token: 'old-late', refresh_token: 'old-late-refresh' } });
+  await oldRejected;
+  pending[1]({ status: 200, json: { access_token: 'new-refreshed', refresh_token: 'new-refreshed-token' } });
+  assert.equal((await next).accessToken, 'new-refreshed');
+});
+
+test('A 401 arriving after an account switch never sends the old conversation to the new account', async () => {
+  const { oauth, store } = signedIn(3_600_000);
+  api.setChatGPTOAuthService(oauth);
+  let requests = 0;
+  globalThis.__providerRequest = async () => {
+    requests++;
+    store.set({ ...store.get(), accountId: 'other-account', accessToken: 'other-access', refreshToken: 'other-refresh' });
+    return rejected;
+  };
+  await assert.rejects(send(), /Please reconnect/);
+  assert.equal(requests, 1);
+});
+
+test('Stop during 401 token refresh prevents the retry request', async () => {
+  const { oauth } = signedIn(3_600_000);
+  api.setChatGPTOAuthService(oauth);
+  let stopped = false;
+  let requests = 0;
+  globalThis.__providerRequest = async request => {
+    requests++;
+    if (request.url === TOKEN_URL) { stopped = true; return refreshed(1); }
+    return rejected;
+  };
+  await assert.rejects(api.sendMessage(settings('chatgpt-oauth'), [{ role: 'user', content: 'Hi' }], [], 'System', () => stopped), /cancelled/);
+  assert.equal(requests, 2); // first API call and refresh only
+});
+
+
+for (const cancelAt of ['poll', 'exchange']) {
+  test(`Cancelling during device ${cancelAt} never stores the late credential`, async () => {
+    const { oauth } = signedIn();
+    oauth.clearCredential();
+    let release;
+    globalThis.__providerRequest = async request => {
+      const polling = request.url !== TOKEN_URL;
+      const reply = polling ? { status: 200, json: { authorization_code: 'fake-code', code_verifier: 'fake-verifier' } }
+        : refreshed(1);
+      if ((cancelAt === 'poll') === polling) return new Promise(resolve => { release = () => resolve(reply); });
+      return reply;
+    };
+    const handle = oauth.pollDeviceAuthorization({ deviceAuthId: 'fake', userCode: 'fake', intervalMs: 0 });
+    await until(() => release);
+    handle.cancel();
+    release();
+    await assert.rejects(handle.promise, /cancelled/);
+    assert.equal(oauth.getCredential(), null);
+  });
+}
