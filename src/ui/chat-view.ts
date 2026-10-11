@@ -78,6 +78,7 @@ export class ObsidianChatView extends ItemView {
   private plugin: ChatPlugin;
   private chatContainer: ChatContainerApi | undefined;
   private running = false;
+  private runVersion = 0;
   /** Resolves once onOpen() has mounted the chat UI, or failed to. */
   readonly ready: Promise<void>;
   private markReady!: () => void;
@@ -159,7 +160,7 @@ export class ObsidianChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    this.plugin.agent.abort();
+    this.handleStop();
     if (this.chatContainer) {
       await unmount(this.chatContainer);
       this.chatContainer = undefined;
@@ -207,6 +208,8 @@ export class ObsidianChatView extends ItemView {
       new Notice("The chat panel couldn't be shown, so the message wasn't sent.");
       return;
     }
+    const version = ++this.runVersion;
+    const isCurrent = () => version === this.runVersion;
     const history = this.plugin.chatHistory;
 
     this.running = true;
@@ -245,7 +248,7 @@ export class ObsidianChatView extends ItemView {
           history.push({ type: "assistant", text: question });
           const answer = await chat.showAskUser(question);
           // Empty: Stop or Clear dropped the question.
-          if (!answer) return answer;
+          if (!answer || !isCurrent()) return "";
           history.push({ type: "user", text: answer });
           chat.setInputEnabled(false);
           return answer;
@@ -257,19 +260,23 @@ export class ObsidianChatView extends ItemView {
         },
       }, selection, images);
     } catch (e) {
+      if (!isCurrent()) return;
       const msg = e instanceof Error ? e.message : String(e);
       chat.addError(`Unexpected error: ${msg}`);
       history.push({ type: "error", text: `Unexpected error: ${msg}` });
     } finally {
-      this.running = false;
-      chat.setInputEnabled(true);
-      chat.focus();
-      // Persist after each turn
-      void this.plugin.saveChatHistory();
+      if (isCurrent()) {
+        this.running = false;
+        chat.setInputEnabled(true);
+        chat.focus();
+        // Persist after each turn
+        void this.plugin.saveChatHistory();
+      }
     }
   }
 
   private handleStop(): void {
+    this.runVersion++;
     this.plugin.agent.abort();
     this.running = false;
     const chat = this.chatContainer;
@@ -284,6 +291,7 @@ export class ObsidianChatView extends ItemView {
   }
 
   private handleClear(): void {
+    this.runVersion++;
     this.plugin.agent.clear();
     this.plugin.chatHistory = [];
     this.chatContainer?.clearMessages();
