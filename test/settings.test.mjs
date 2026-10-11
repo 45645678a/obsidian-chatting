@@ -139,3 +139,15 @@ test('Settings: the connection Test asks without web search; the setting stays o
   assert.equal(requests[0].tools, undefined);
   assert.equal(plugin.settings.enableWebSearch, true);
 });
+
+
+test('Custom model ID commits on Enter without requiring blur', async () => {
+  const { plugin, render } = settingsTab('openai');
+  await render('Model').controls[0].change('__custom__');
+  const field = render('Custom model ID').controls[0];
+  await field.type(' custom-on-enter ');
+  field.listeners.keydown?.({ key: 'Enter', isComposing: false, preventDefault() {} });
+  await new Promise(setImmediate);
+  assert.equal(plugin.settings.model, 'custom-on-enter');
+  assert.equal(plugin.saves, 1);
+});
