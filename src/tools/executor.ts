@@ -1,5 +1,5 @@
 import { App, TFile, getFrontMatterInfo, normalizePath } from "obsidian";
-import type { ToolResult } from "../types";
+import type { SelectionScope, ToolResult } from "../types";
 
 /** Images the read tools refuse (SVG is text, so they read it). */
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif", "ico"];
@@ -31,17 +31,20 @@ export async function executeTool(
   app: App,
   toolName: string,
   input: Record<string, unknown>,
-  onAskUser: AskUserCallback
+  onAskUser: AskUserCallback,
+  scope?: SelectionScope
 ): Promise<ToolResult> {
   if (Object.prototype.hasOwnProperty.call(input, "_raw")) {
     return { result: "Invalid tool arguments: provide a valid JSON object and retry.", isError: true };
   }
   try {
+    const outOfScope = scope && scopeGuard(app, toolName, input, scope);
+    if (outOfScope) return outOfScope;
     switch (toolName) {
       case "read_document":
         return await readDocument(app, input);
       case "edit_document":
-        return await editDocument(app, input);
+        return await editDocument(app, input, scope);
       case "search_vault":
         return await searchVault(app, input);
       case "read_file":
@@ -73,6 +76,122 @@ export async function executeTool(
     const msg = e instanceof Error ? e.message : String(e);
     return { result: `Tool error: ${msg}`, isError: true };
   }
+}
+
+// ─── Selection scope ────────────────────────────────────────────────────────
+// A turn sent with a selection may change only the selected text of that
+// note (the instruction in the user message alone isn't always followed).
+// edit_document's find_replace works inside the selection; the other ways
+// to change that note are refused. Other notes stay editable.
+
+const scopeRefusal = (path: string): ToolResult => ({
+  result: `Not changed: the user selected text in ${path}, and only that selection may change. Use edit_document with operation find_replace and text from within the selection.`,
+  isError: true,
+});
+
+/** Refuses tools other than edit_document that would change the scoped note. */
+function scopeGuard(
+  app: App,
+  toolName: string,
+  input: Record<string, unknown>,
+  scope: SelectionScope
+): ToolResult | null {
+  if (toolName === "rename_file" || toolName === "delete_file") {
+    // The note itself, or a folder it is in (the vault root included).
+    const given = optionalString(input.path);
+    const path = given === undefined ? undefined : normalizePath(given).replace(/\/+$/, "");
+    const touches = path !== undefined && (path === scope.filePath || path === "" || scope.filePath.startsWith(`${path}/`));
+    return touches ? scopeRefusal(scope.filePath) : null;
+  }
+  if (toolName === "set_properties" && resolveFile(app, optionalString(input.path))?.path === scope.filePath) {
+    return scopeRefusal(scope.filePath);
+  }
+  return null;
+}
+
+/** How many copies of `text` start before `end` in `data` (not overlapping). */
+export function copiesBefore(data: string, text: string, end: number): number {
+  let count = 0;
+  for (let at = data.indexOf(text); at !== -1 && at < end; at = data.indexOf(text, at + text.length)) count++;
+  return count;
+}
+
+/**
+ * Where the selected text is in the note now: at its offset; else, if text
+ * typed elsewhere moved it, the same copy counted from the top; else the
+ * copy nearest to the offset; -1 if gone.
+ */
+function selectionStart(data: string, text: string, from?: number, occurrence?: number): number {
+  if (from !== undefined && data.startsWith(text, from)) return from;
+  // Text typed above the selection moves it: the same copy, counted from the top.
+  if (occurrence !== undefined) {
+    let at = data.indexOf(text);
+    for (let i = 0; i < occurrence && at !== -1; i++) at = data.indexOf(text, at + text.length);
+    if (at !== -1) return at;
+  }
+  if (from === undefined) return data.indexOf(text);
+  const after = data.indexOf(text, from);
+  const before = data.lastIndexOf(text, from);
+  if (before === -1 || after === -1) return Math.max(before, after);
+  return from - before <= after - from ? before : after;
+}
+
+/** The position in `data` of an editor offset (the editor counts \r\n as one character). */
+function crlfOffset(data: string, offset: number): number {
+  let at = 0;
+  for (let i = 0; i < offset && at < data.length; i++) at += data.startsWith("\r\n", at) ? 2 : 1;
+  return at;
+}
+
+/**
+ * find_replace inside the selection: `find` is looked up in the selected
+ * text (not the first match in the note), and the scope then holds the
+ * changed text, so later edits in the turn stay inside it too.
+ */
+async function editInScope(
+  app: App,
+  file: TFile,
+  scope: SelectionScope,
+  find: string,
+  content: string
+): Promise<ToolResult> {
+  // Set in the callback; the cast keeps TypeScript from narrowing it to "done".
+  let outcome = "done" as "done" | "outside" | "lost";
+  let multiple = false;
+  await app.vault.process(file, (data) => {
+    // The editor's selection and offset use \n line breaks; a note saved
+    // with \r\n is matched and written with \r\n.
+    const crlf = data.includes("\r\n");
+    const inNote = (text: string) => (crlf ? text.replace(/\r?\n/g, "\r\n") : text);
+    const selected = inNote(scope.text);
+    const from = crlf && scope.from !== undefined ? crlfOffset(data, scope.from) : scope.from;
+    const start = selectionStart(data, selected, from, scope.occurrence);
+    const at = scope.text.indexOf(find);
+    if (start === -1 || at === -1) {
+      outcome = start === -1 ? "lost" : "outside";
+      return data;
+    }
+    multiple = scope.text.indexOf(find, at + 1) !== -1;
+    scope.text = scope.text.slice(0, at) + content + scope.text.slice(at + find.length);
+    scope.from = crlf ? data.slice(0, start).replace(/\r\n/g, "\n").length : start;
+    const changed = data.slice(0, start) + inNote(scope.text) + data.slice(start + selected.length);
+    scope.occurrence = copiesBefore(changed, inNote(scope.text), start);
+    return changed;
+  });
+  if (outcome === "lost") {
+    return {
+      result: `Not changed: the selected text is no longer in ${file.path} as it was selected. Tell the user; they can select it again and resend.`,
+      isError: true,
+    };
+  }
+  if (outcome === "outside") {
+    return {
+      result: `Not changed: 'find' must be text from within the user's selection in ${file.path}; nothing outside it may change.`,
+      isError: true,
+    };
+  }
+  const note = multiple ? "[Note: Multiple matches found in the selection, replacing first occurrence.]\n" : "";
+  return { result: `${note}Successfully replaced text in the selection in ${file.path}.`, isError: false };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -143,7 +262,8 @@ async function readDocument(
 
 async function editDocument(
   app: App,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  scope?: SelectionScope
 ): Promise<ToolResult> {
   const operation = requiredString(input.operation);
   // A missing `content` must not become "": replace_all would blank the
@@ -160,6 +280,12 @@ async function editDocument(
   const file = resolveFile(app, path);
   if (!file) {
     return { result: path ? `File not found: ${path}` : "No active document open.", isError: true };
+  }
+
+  if (scope && file.path === scope.filePath) {
+    if (operation !== "find_replace") return scopeRefusal(file.path);
+    if (!find) return { result: "'find' parameter is required for find_replace.", isError: true };
+    return await editInScope(app, file, scope, find, content);
   }
 
   switch (operation) {

@@ -107,6 +107,10 @@ export interface SelectionScope {
   text: string;
   /** Path to the file containing the selection */
   filePath: string;
+  /** Where the selection starts in the note (character offset), so a repeated text isn't mistaken for it. */
+  from?: number;
+  /** How many copies of the text come before the selection in the note (0: it is the first). */
+  occurrence?: number;
 }
 
 // ─── Tool Execution ─────────────────────────────────────────────────────────
