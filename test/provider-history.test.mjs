@@ -145,7 +145,8 @@ test('Anthropic: thinking/signatures/redacted thinking/search/citations replay u
   const messages = [{ role: 'user', content: [text('Read'), { type: 'image', image }] }];
   const requests = transport((body, index) => response('anthropic', index ? [text('Done')] : raw, index ? 'end_turn' : 'tool_use'));
   const first = await api.sendAnthropicMessage(settings('anthropic'), messages, [], 'System');
-  assert.deepEqual(first.content.map(block => block.type), ['text', 'tool_use']);
+  assert.deepEqual(first.content.map(block => block.type), ['text', 'text', 'tool_use']);
+  assert.equal(first.content[1].text, '\n\nSources:\n- [https://example.com](https://example.com)');
   messages.push(assistant(first), { role: 'user', content: [result('read', 'Contents', true)] });
   await api.sendAnthropicMessage(settings('anthropic'), JSON.parse(JSON.stringify(messages)), [], 'System');
   assert.deepEqual(requests[1].messages[1].content, raw);
@@ -527,7 +528,7 @@ test('Declarative settings stay searchable and reuse the legacy renderers withou
   const plugin={settings:settings('openai')}; const tab=new api.ChatSettingTab({},plugin);
   globalThis.__providerRequest=async()=>assert.fail('Indexing must not perform network I/O');
   const definitions=tab.getSettingDefinitions();
-  assert.deepEqual(definitions.map(d=>d.name),['Provider','API key','ChatGPT account','Model','Web search','Max tool iterations']);
+  assert.deepEqual(definitions.map(d=>d.name),['Provider','API key','ChatGPT account','Model','Custom model ID','Web search','Max tool iterations']);
   assert.equal(definitions[1].visible(),true); assert.equal(definitions[2].visible(),false);
   plugin.settings.provider='chatgpt-oauth'; assert.equal(definitions[1].visible(),false); assert.equal(definitions[2].visible(),true);
   let updates=0,displays=0; tab.display=()=>displays++;
@@ -543,11 +544,21 @@ test('OAuth catalog refuses to associate a new account credential with an old ca
   await assert.rejects(api.refreshCatalog(state,'chatgpt-oauth',identity,'',{getUsableCredential:async()=>({accessToken:'fake',accountId:'new-account'})},true),/account changed/);
   assert.deepEqual(state.entries,[]);
 });
+test('ChatGPT: citation markers (private-use characters) are left out of the shown answer, kept in the replay', async () => {
+  const marked = 'A balanced pile smells earthy. \uE200cite\uE202turn0search0\uE201\n\nTurn it \uE202weekly.\uE200cite\uE202turn0search1\uE201';
+  transport(() => response('chatgpt-oauth', [text(marked)]));
+  const cb = callbacks();
+  const agent = new api.AgentLoop(vaultApp().app, settings('chatgpt-oauth'));
+  await agent.run('Compost?', cb);
+  assert.deepEqual(cb.errors, []);
+  assert.deepEqual(cb.texts, ['A balanced pile smells earthy.\n\nTurn it weekly.']);
+  assert.match(JSON.stringify(agent.exportMessages().at(-1).replay.items), /turn0search0/);
+});
 test('Stopping during rate-limit backoff prevents the retried network request', async () => {
   let stopped=false,requests=0;
   const previousWindow=globalThis.window;
   globalThis.window={setTimeout(fn){stopped=true;queueMicrotask(fn);}};
-  globalThis.__providerRequest=async()=>{requests++;throw new Error('HTTP 429');};
+  globalThis.__providerRequest=async()=>{requests++;return {status:429,json:{error:{message:'Slow down'}}};};
   try {
     await assert.rejects(api.sendMessage(settings('openai'),[{role:'user',content:'test'}],[],'test',()=>stopped),/cancelled/);
     assert.equal(requests,1);

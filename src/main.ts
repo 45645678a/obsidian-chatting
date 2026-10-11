@@ -127,7 +127,7 @@ export default class ChatPlugin extends Plugin {
     // Editor command: chat about selected text (conditional, only when text is selected)
     this.addCommand({
       id: "send-selection",
-      name: "Send selection to Chat",
+      name: "Send selection to chat",
       editorCheckCallback: (checking: boolean, editor: Editor, ctx: MarkdownFileInfo) => {
         const sel = editor.getSelection();
         if (!sel || sel.length === 0) return false;
@@ -160,7 +160,7 @@ export default class ChatPlugin extends Plugin {
         if (sel && sel.length > 0) {
           menu.addItem((item) =>
             item
-              .setTitle("Send selection to Chat")
+              .setTitle("Send selection to chat")
               .setIcon("message-circle")
               .onClick(() => {
                 const scope: SelectionScope = { text: sel, filePath: info.file?.path ?? "" };
@@ -671,7 +671,11 @@ function normalizeSettings(value: unknown): Partial<ChatSettings> {
   if (isProvider(value.provider)) settings.provider = value.provider;
   if (typeof value.apiKey === "string") settings.apiKey = value.apiKey;
   if (typeof value.model === "string") settings.model = value.model;
-  if (typeof value.maxIterations === "number") settings.maxIterations = value.maxIterations;
+  // Within the settings field's range, 1 to 100, however data.json was edited;
+  // below 1 (0 used to mean the default) keeps the default.
+  if (typeof value.maxIterations === "number" && Number.isFinite(value.maxIterations) && value.maxIterations >= 1) {
+    settings.maxIterations = Math.min(100, Math.floor(value.maxIterations));
+  }
   if (typeof value.enableWebSearch === "boolean") settings.enableWebSearch = value.enableWebSearch;
   settings.modelCatalog = normalizeCatalogState(value.modelCatalog);
   return settings;

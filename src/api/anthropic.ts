@@ -1,5 +1,6 @@
 import { catalogIdentity } from "./model-catalog";
 import { requestUrl } from "obsidian";
+import { ProviderError, retryAfterMs } from "./errors";
 import type {
   ChatSettings,
   UnifiedMessage,
@@ -110,15 +111,22 @@ export async function sendAnthropicMessage(
   if (response.status !== 200) {
     const responseJson = response.json as unknown;
     const errorText = getNestedString(responseJson, ["error", "message"]) ?? `HTTP ${response.status}`;
-    throw new Error(`Anthropic API error (${response.status}): ${errorText}`);
+    throw new ProviderError(`Anthropic API error (${response.status}): ${errorText}`, response.status,
+      getNestedString(responseJson, ["error", "type"]), retryAfterMs(response.headers));
   }
 
   const data = parseAnthropicResponse(response.json as unknown);
+  const content = data.content.map(fromAnthropicBlock).filter((b): b is ContentBlock => b !== null);
+  const sources = citedSources(data.content);
+  if (sources) {
+    // Right after the answer's text, before any tool call: in the history
+    // another provider gets, text after a call would split it from its result.
+    const firstCall = content.findIndex((b) => b.type === "tool_use");
+    content.splice(firstCall === -1 ? content.length : firstCall, 0, sources);
+  }
 
   return {
-    content: data.content
-      .map(fromAnthropicBlock)
-      .filter((b): b is ContentBlock => b !== null),
+    content,
     // Thinking signatures, redacted thinking, citations and server tool results
     // must be returned unchanged. UI content is deliberately separate.
     replay: { provider: "anthropic", model, identity, items: data.content },
@@ -138,7 +146,7 @@ interface AnthropicContentBlock extends Record<string, unknown> {
   id?: string;
   name?: string;
   input?: Record<string, unknown>;
-  search_results?: Array<{ title: string; url: string; snippet: string }>;
+  citations?: unknown;
 }
 
 interface AnthropicResponse {
@@ -236,6 +244,26 @@ function toAnthropicMessage(msg: UnifiedMessage, model: string, identity: string
   return { role: msg.role, content: blocks };
 }
 
+/**
+ * The web pages a web search answer cites (`web_search_result_location`
+ * citations on its text blocks), each once, as a list after the answer:
+ * Anthropic asks apps to show the sources with the answer.
+ */
+function citedSources(blocks: AnthropicContentBlock[]): ContentBlock | null {
+  const sources = new Map<string, string>();
+  for (const block of blocks) {
+    if (block.type !== "text" || !Array.isArray(block.citations)) continue;
+    for (const citation of block.citations as unknown[]) {
+      if (!isRecord(citation) || citation.type !== "web_search_result_location" || typeof citation.url !== "string") continue;
+      if (!sources.has(citation.url)) sources.set(citation.url, typeof citation.title === "string" && citation.title ? citation.title : citation.url);
+    }
+  }
+  if (sources.size === 0) return null;
+  const links = [...sources].map(([url, title]) =>
+    `- [${title.replace(/[\\[\]]/g, "\\$&")}](${url.replace(/[ ()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)})`);
+  return { type: "text", text: `\n\nSources:\n${links.join("\n")}` };
+}
+
 function fromAnthropicBlock(block: AnthropicContentBlock): ContentBlock | null {
   if (block.type === "tool_use") {
     return {
@@ -245,15 +273,10 @@ function fromAnthropicBlock(block: AnthropicContentBlock): ContentBlock | null {
       input: block.input,
     };
   }
-  // Web search results are server-managed; render as text for the user
-  if (block.type === "web_search_tool_result" && block.search_results) {
-    const formatted = block.search_results
-      .map((r) => `**${r.title}**\n${r.url}\n${r.snippet}`)
-      .join("\n\n");
-    return { type: "text", text: formatted };
-  }
-  // Thinking and server_tool_use blocks are internal; don't surface to user
-  if (block.type === "thinking" || block.type === "server_tool_use") {
+  // Thinking and web search (`server_tool_use`, `web_search_tool_result`,
+  // whose `content` holds encrypted results) are internal: they go back
+  // unchanged in the replay; the pages cited show as sources.
+  if (block.type === "thinking" || block.type === "server_tool_use" || block.type === "web_search_tool_result") {
     return null;
   }
   // Skip blocks with no text content (safety net)

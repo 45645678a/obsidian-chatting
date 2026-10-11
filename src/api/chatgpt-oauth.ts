@@ -27,6 +27,7 @@ import type {
 } from "../types";
 import { CHATGPT_OAUTH_DEFAULT_MODEL } from "../types";
 import { buildResponsesInput, fromResponsesOutput } from "./responses-format";
+import { ProviderError, retryAfterMs } from "./errors";
 import {
   ChatGPTOAuthError,
   type ChatGPTOAuthService,
@@ -236,11 +237,12 @@ async function sendOnce(
       getNestedString(json, ["error", "message"]) ??
       response.text?.slice(0, 300) ??
       `HTTP ${response.status}`;
-    const err = new ChatGPTOAuthError(
+    // The Codex backend names a plan's usage limit in `error.type` (also a 429).
+    const code = getNestedString(json, ["error", "code"]) ?? getNestedString(json, ["error", "type"]);
+    throw new ProviderError(
       `ChatGPT OAuth request failed (${response.status}): ${apiMsg}. The Codex backend may not accept the selected model or request format. Try reconnecting, picking a different model, or switching to OpenAI API Key.`,
+      response.status, code, retryAfterMs(response.headers),
     );
-    (err as Error & { status?: number }).status = response.status;
-    throw err;
   }
 
   // Two possible response shapes:
@@ -298,6 +300,7 @@ function parseResponseBody(response: {
   const itemByIndex = new Map<string | number, Record<string, unknown>>();
   let completedResponse: Record<string, unknown> | null = null;
   let failureMessage: string | null = null;
+  let failureCode: string | undefined;
 
   for (const evt of events) {
     const type = stringValue(evt.type);
@@ -313,12 +316,15 @@ function parseResponseBody(response: {
       completedResponse = { ...(asOptionalRecord(evt.response) ?? {}), status: "incomplete" };
     } else if (type === "response.failed") {
       failureMessage = getNestedString(evt.response, ["error", "message"]) ?? "ChatGPT OAuth response failed";
+      failureCode = getNestedString(evt.response, ["error", "code"]);
     } else if (type === "error" && typeof evt.message === "string") {
       failureMessage = evt.message;
+      failureCode = typeof evt.code === "string" ? evt.code : undefined;
     }
   }
 
-  if (failureMessage) throw new ChatGPTOAuthError(failureMessage);
+  // Status 0: the error came inside a response that had started.
+  if (failureMessage) throw new ProviderError(failureMessage, 0, failureCode);
 
   if (completedResponse) {
     // Synthesize a Responses-API-shaped object from the streamed pieces.

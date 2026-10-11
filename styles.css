@@ -16,6 +16,21 @@
   min-width: 280px;
 }
 
+/* Settings rows with several controls (ChatGPT account, API key, Model):
+   on a phone the controls move below the description and wrap. Desktop
+   and tablet keep Obsidian's layout. */
+body.is-phone .ochatting-settings .setting-item {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+body.is-phone .ochatting-settings .setting-item-control {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 6px;
+  max-width: 100%;
+}
+
 .ochatting-oauth-explainer {
   padding: 0.75em;
   margin-bottom: 0.75em;

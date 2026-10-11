@@ -118,6 +118,27 @@ async function updateClientVersion(state: CatalogState, force: boolean): Promise
   return versionRequest;
 }
 
+/** OpenAI families that answer chats, and those that don't (speech, images, search, completions-only, voice). */
+const OPENAI_CHAT = /^(gpt-|o\d|chatgpt-|codex-)/;
+const OPENAI_NOT_CHAT = /realtime|audio|transcri|tts|search|image|embedding|instruct|gpt-live/;
+/** A dated snapshot of a model: `gpt-4o-2024-08-06`, `gpt-4-0613`. */
+const OPENAI_SNAPSHOT = /-(\d{4}-\d{2}-\d{2}|\d{4})$/;
+
+/**
+ * OpenAI's `/v1/models` gives only IDs and creation dates, in no order:
+ * chat models, newest first (`created`), without a dated snapshot when its
+ * model is listed too (`gpt-5.4-2026-03-05` beside `gpt-5.4`).
+ */
+function openaiChatModels(records: Record<string, unknown>[]): ModelOption[] {
+  const chat = records.filter(m => typeof m.id === "string" && OPENAI_CHAT.test(m.id) && !OPENAI_NOT_CHAT.test(m.id));
+  const ids = new Set(chat.map(m => m.id as string));
+  const created = (m: Record<string, unknown>) => typeof m.created === "number" ? m.created : 0;
+  return chat
+    .filter(m => { const alias = (m.id as string).replace(OPENAI_SNAPSHOT, ""); return alias === m.id || !ids.has(alias); })
+    .sort((a, b) => created(b) - created(a) || (a.id as string).localeCompare(b.id as string))
+    .map(m => ({ value: m.id as string, label: m.id as string }));
+}
+
 /** Dedupe requests; failures retain the last good entry and use a short retry backoff. */
 export async function refreshCatalog(state: CatalogState, provider: Provider, identity: string,
   apiKey: string, oauth: ChatGPTOAuthService, force = false): Promise<ModelOption[]> {
@@ -160,9 +181,12 @@ export async function refreshCatalog(state: CatalogState, provider: Provider, id
         seen.add(cursor);
         if (seen.size > 100) throw new Error("Model catalog pagination limit exceeded");
       } while (cursor);
-      models = records.filter(m => typeof m.id === "string").filter(m => provider === "anthropic" ? m.type === "model" :
-        /^(gpt-|o\d|chatgpt-|codex-)/.test(String(m.id)) && !/realtime|audio|transcri|search|image|embedding/.test(String(m.id)))
-        .map(m => ({ value: m.id as string, label: typeof m.display_name === "string" ? m.display_name : m.id as string }));
+      if (provider === "openai") {
+        models = openaiChatModels(records);
+      } else {
+        models = records.filter(m => typeof m.id === "string" && m.type === "model")
+          .map(m => ({ value: m.id as string, label: typeof m.display_name === "string" ? m.display_name : m.id as string }));
+      }
     }
     models = [...new Map(models.map(m => [m.value, m])).values()];
     if (!models.length) throw new Error("No compatible models returned; keeping the previous list");

@@ -51,7 +51,7 @@ The agent reads before it edits, prefers small surgical changes over rewrites, a
 
 ## 🎯 Selection scope
 
-Highlight text in any note, right-click, choose **Send selection to Chat**. The selection becomes a pill above the input and the assistant edits only inside the selected range — leaving the rest of the document byte-identical.
+Highlight text in any note, right-click, choose **Send selection to chat**. The selection becomes a pill above the input and the assistant edits only inside the selected range — leaving the rest of the document byte-identical.
 
 ```
 [ pill: "...the introduction was a bit dry, and..."  ✕ ]

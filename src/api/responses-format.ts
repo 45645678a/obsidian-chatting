@@ -1,4 +1,5 @@
 import type { ContentBlock, Provider, UnifiedMessage, UnifiedResponse } from "../types";
+import { ProviderError } from "./errors";
 
 /** Encode both fresh input and restored history without losing tool pairs. */
 export function buildResponsesInput(
@@ -50,8 +51,10 @@ export function fromResponsesOutput(
   identity?: string,
 ): UnifiedResponse {
   if (data.status === "failed" || data.error) {
-    const error = isRecord(data.error) ? data.error.message : undefined;
-    throw new Error(typeof error === "string" ? error : "Response failed.");
+    const error = isRecord(data.error) ? data.error : {};
+    // Status 0: the error came inside a response; its code decides on a retry.
+    throw new ProviderError(typeof error.message === "string" ? error.message : "Response failed.", 0,
+      typeof error.code === "string" ? error.code : undefined);
   }
   const output = Array.isArray(data.output) ? data.output.filter(isRecord) : [];
   const content: ContentBlock[] = [];
@@ -59,7 +62,7 @@ export function fromResponsesOutput(
     if (item.type === "message" && Array.isArray(item.content)) {
       for (const part of item.content.filter(isRecord)) {
         if (part.type === "output_text" && typeof part.text === "string") {
-          content.push({ type: "text", text: part.text });
+          content.push({ type: "text", text: withoutCitationMarkers(part.text) });
         } else if (part.type === "refusal" && typeof part.refusal === "string") {
           content.push({ type: "text", text: part.refusal });
         }
@@ -86,6 +89,19 @@ export function fromResponsesOutput(
     stopReason: data.status === "incomplete" ? "max_tokens" : content.some(block => block.type === "tool_use") ? "tool_use" : "end_turn",
     usage: usage ? { inputTokens: numberValue(usage.input_tokens), outputTokens: numberValue(usage.output_tokens) } : undefined,
   };
+}
+
+/**
+ * Citation markers some models write into the text after a web search
+ * (seen on the ChatGPT route: "citeturn0search0" between private-use
+ * characters, a reference to a search result) instead of `annotations`.
+ * They are left out of the shown text; the replay items keep them as sent.
+ */
+const CITATION_MARKER = / ?\uE200[^\uE201]*\uE201/g;
+const CITATION_CHARACTERS = /[\uE200-\uE202]/g;
+
+export function withoutCitationMarkers(text: string): string {
+  return text.replace(CITATION_MARKER, "").replace(CITATION_CHARACTERS, "");
 }
 
 function numberValue(value: unknown): number {

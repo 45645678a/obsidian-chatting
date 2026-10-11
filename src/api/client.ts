@@ -2,10 +2,32 @@ import type { ChatSettings, UnifiedMessage, UnifiedToolDef, UnifiedResponse } fr
 import { sendAnthropicMessage } from "./anthropic";
 import { sendOpenAIMessage } from "./openai";
 import { sendChatGPTOAuthMessage } from "./chatgpt-oauth";
+import { ProviderError, retryAfterInMessage } from "./errors";
+
+/** HTTP statuses of a rate limit or an overload. */
+const RETRY_STATUSES = [429, 529];
+/**
+ * Error codes of a rate limit or an overload (Anthropic's types, OpenAI's and
+ * the Codex backend's codes). They decide where the status doesn't: an error
+ * inside an OpenAI or ChatGPT response that had started (status 0), and the
+ * Codex backend's overload (a 503 with server_is_overloaded or slow_down).
+ */
+const RETRY_CODES = ["rate_limit_error", "overloaded_error", "rate_limit_exceeded", "server_is_overloaded", "slow_down"];
+/**
+ * Limits a short wait doesn't lift, though some come as a 429: OpenAI's
+ * exhausted quota, and the ChatGPT plan's usage limit (Codex backend).
+ */
+const USAGE_LIMIT_CODES = ["insufficient_quota", "usage_limit_reached", "usage_not_included"];
+/** Wait before the retry when the provider names none; a longer wait than the cap is not retried. */
+const RETRY_DELAY_MS = 5000;
+const MAX_RETRY_DELAY_MS = 30_000;
 
 /**
  * Dispatches a message to the appropriate provider adapter.
- * Handles single retry on 429 (rate limit) with exponential backoff.
+ * Retries once on a rate limit or overload, decided by the HTTP status or
+ * error code (not by the message text), after the wait the provider asks
+ * for (`Retry-After`, else "try again in 11.054s" in the message). A usage
+ * limit is not retried, nor a wait longer than 30 s.
  */
 export async function sendMessage(
   settings: ChatSettings,
@@ -28,30 +50,19 @@ export async function sendMessage(
   try {
     return await doSend();
   } catch (e) {
-    // Single retry on rate limit
-    if (isRateLimitError(e)) {
-      const retryAfter = extractRetryAfter(e);
-      const delay = retryAfter ? retryAfter * 1000 : 5000;
-      await sleep(Math.min(delay, 30000));
-      return await doSend();
-    }
-    throw e;
+    if (!isRateLimit(e)) throw e;
+    const wait = e.retryAfterMs ?? retryAfterInMessage(e.message) ?? RETRY_DELAY_MS;
+    // The user sees the error rather than a long silent wait.
+    if (wait > MAX_RETRY_DELAY_MS) throw e;
+    await sleep(wait);
+    return await doSend();
   }
 }
 
-function isRateLimitError(e: unknown): boolean {
-  if (e instanceof Error) {
-    return e.message.includes("429") || e.message.toLowerCase().includes("rate limit");
-  }
-  return false;
-}
-
-function extractRetryAfter(e: unknown): number | null {
-  if (e instanceof Error) {
-    const match = e.message.match(/retry.after[:\s]*(\d+)/i);
-    if (match) return parseInt(match[1], 10);
-  }
-  return null;
+function isRateLimit(e: unknown): e is ProviderError {
+  if (!(e instanceof ProviderError)) return false;
+  if (e.code !== undefined && USAGE_LIMIT_CODES.includes(e.code)) return false;
+  return RETRY_STATUSES.includes(e.status) || (e.code !== undefined && RETRY_CODES.includes(e.code));
 }
 
 function sleep(ms: number): Promise<void> {
