@@ -16,8 +16,14 @@ Anthropic `pause_turn` and thinking configuration, OpenAI conversation
 isolation, and the vault tools: `edit_document` input checks and insert
 positions, `set_properties` input checks, `read_file` and `read_document`
 refusing binary files, the local date from `get_current_datetime`, and
-quoting of a multi-line selection. These tests do not establish
-live-service or physical-iOS behavior.
+quoting of a multi-line selection. `chat-view.test.mjs` drives the chat
+view and the plugin's commands with a fake Svelte component: the API
+history cap (80 messages saved, cut to 60 past 80) and OpenAI chaining past
+it, tool card inputs and `ask_user` questions and answers after a reload,
+Stop and Clear while `ask_user` waits, Copy transcript with the chat panel
+closed, commands waiting for the view, and Clear during a turn.
+`settings-tab.test.mjs` checks that a closed settings tab is not redrawn.
+These tests do not establish live-service or physical-iOS behavior.
 
 Two Node scripts that exercise the ChatGPT/Codex Responses endpoint
 **without** going through Obsidian, so iteration on the

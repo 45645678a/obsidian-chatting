@@ -7,7 +7,6 @@ import type { ConversationContext } from "../types";
  */
 export function buildContext(app: App): ConversationContext {
   const activeFile = app.workspace.getActiveFile();
-  let activeFileContent: string | null = null;
   let selection: string | null = null;
 
   // Get selection from active editor
@@ -21,7 +20,6 @@ export function buildContext(app: App): ConversationContext {
 
   return {
     activeFile: activeFile?.path ?? null,
-    activeFileContent, // Populated lazily by the loop if needed
     selection,
     vaultName: app.vault.getName(),
     fileCount: app.vault.getMarkdownFiles().length,

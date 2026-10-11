@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { App, Component as ObsidianComponent } from "obsidian";
-  import { MarkdownRenderer, Notice } from "obsidian";
+  import type { App } from "obsidian";
+  import { Component as ObsidianComponent, MarkdownRenderer, Notice } from "obsidian";
   import type { ToolResult, SelectionScope, ImageAttachment } from "../types";
 
   const MAX_IMAGE_COUNT = 4;
@@ -118,6 +118,13 @@
     return new Promise<string>((resolve) => {
       askUserResolve = resolve;
     });
+  }
+
+  /** Drop a pending ask_user question (its turn was stopped or cleared). */
+  export function cancelAskUser(): void {
+    const resolve = askUserResolve;
+    askUserResolve = null;
+    resolve?.("");
   }
 
   export function setInputEnabled(enabled: boolean): void {
@@ -342,18 +349,23 @@
     attachments = attachments.filter((image) => image.id !== id);
   }
 
-  // Render markdown into a DOM node using Obsidian's renderer
-  function renderMarkdown(node: HTMLElement, text: string): void {
-    node.empty();
-    MarkdownRenderer.render(app, text, node, "", component);
-  }
-
-  // Use action for markdown rendering
+  // Render markdown into a DOM node using Obsidian's renderer. Each render
+  // gets its own child component, unloaded when the text changes or the
+  // message goes away; with the view itself as the component, everything
+  // the renderer registers would stay loaded until the view closes.
   function markdown(node: HTMLElement, text: string) {
-    renderMarkdown(node, text);
+    let child: ObsidianComponent | null = null;
+    const render = (value: string) => {
+      if (child) component.removeChild(child);
+      child = component.addChild(new ObsidianComponent());
+      node.empty();
+      MarkdownRenderer.render(app, value, node, "", child);
+    };
+    render(text);
     return {
-      update(newText: string) {
-        renderMarkdown(node, newText);
+      update: render,
+      destroy() {
+        if (child) component.removeChild(child);
       },
     };
   }
@@ -420,6 +432,12 @@
             </span>
             <span class="ochatting-tool-name">{formatToolName(msg.toolName ?? "")}</span>
           </div>
+          {#if msg.toolInput && Object.keys(msg.toolInput).length > 0}
+            <details class="ochatting-tool-details">
+              <summary>Parameters</summary>
+              <pre class="ochatting-tool-json">{truncate(JSON.stringify(msg.toolInput, null, 2), 2000)}</pre>
+            </details>
+          {/if}
           <details class="ochatting-tool-details">
             <summary>{msg.toolResult?.isError ? "Error" : "Result"}</summary>
             <pre class="ochatting-tool-json">{truncate(msg.toolResult?.result ?? "", 2000)}</pre>
