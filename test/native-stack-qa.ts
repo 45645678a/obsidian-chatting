@@ -1,9 +1,10 @@
 /** Desktop-only QA helper, installed only in an already-authorized isolated test vault. */
-import { Plugin, Notice, Setting, requestUrl, apiVersion } from 'obsidian';
-const obTransport = require('obsidian');
+import { Plugin, Notice, Setting, apiVersion } from 'obsidian';
+const nativeObsidian = require('obsidian');
+const obTransport: { requestUrl: (...args: any[]) => any } = { requestUrl: (...args) => nativeObsidian.requestUrl(...args) };
 import { executeTool } from '../src/tools/executor';
 import { ChatSettingTab, ChatGPTDeviceLoginModal } from '../src/settings';
-import { readFileSync, writeFileSync, copyFileSync } from 'node:fs';
+import { readFileSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 declare const __STACK_BUILD_DIR__: string;
@@ -44,9 +45,24 @@ export default class NativeStackQA extends Plugin {
     let file = app.vault.getFileByPath(note);
     if (file) await app.vault.process(file, () => initial); else file = await app.vault.create(note, initial);
     const leaf = app.workspace.getLeaf(false); await leaf.openFile(file);
+    // Load the unchanged production bundle with a transport-only require proxy.
+    // Obsidian's real API object is immutable; it is never patched globally.
+    await app.plugins.disablePlugin(ID);
+    await app[Symbol.for('chatting-with-ai-pending-chat-state-write')];
+    const source = readFileSync(join(ROOT, '.obsidian/plugins', ID, 'main.js'), 'utf8');
+    const loaded: any = { exports: {} };
+    const mockObsidian = new Proxy(nativeObsidian, { get: (target, key) => key === 'requestUrl' ? (...args: any[]) => obTransport.requestUrl(...args) : Reflect.get(target, key) });
+    new Function('require', 'module', 'exports', source)((id: string) => id === 'obsidian' ? mockObsidian : require(id), loaded, loaded.exports);
+    const PluginClass = loaded.exports.default ?? loaded.exports;
+    p = new PluginClass(app, app.plugins.manifests[ID]);
+    app.plugins.plugins[ID] = p;
+    p.load();
+    await waitUntil(() => p.agent && p.chatHistoryLoaded && app.commands.commands['chatting-with-ai:open-chat']);
     const view = await p.activateView();
-    const priorTransport = requestUrl;
+    const priorTransport = obTransport.requestUrl;
     const settings = { ...p.settings };
+    const saveSettings = p.saveSettings;
+    p.saveSettings = async () => {}; // DOM handlers may save; never alter real secrets with mock keys.
     try {
       Object.assign(p.settings, { provider: 'anthropic', apiKey: 'synthetic-qa-key', model: 'claude-sonnet-4-6', enableWebSearch: false });
       const host = document.createElement('div'); document.body.appendChild(host);
@@ -113,8 +129,12 @@ export default class NativeStackQA extends Plugin {
     } finally {
       obTransport.requestUrl = priorTransport;
       Object.assign(p.settings, settings);
-      await p.saveSettings();
+      p.saveSettings = saveSettings;
     }
+    // Return to the standard loader for reload and live-provider verification.
+    await app.plugins.disablePlugin(ID);
+    await app[Symbol.for("chatting-with-ai-pending-chat-state-write")];
+    await app.plugins.enablePlugin(ID);
     report.passed = true; report.windowReload = 'pending';
     await adapter.write(`${QA}/native-report.json`, JSON.stringify(report, null, 2));
     new Notice('PR stack native QA PASSED; reload window and run reload verification', 12000);

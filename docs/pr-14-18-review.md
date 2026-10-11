@@ -47,7 +47,7 @@ GitHub 上 5 个原始 head 的 check 均成功，GraphQL 回读均没有 review
 
 代码审查与离线集成验证完成；它们不能单独证明整组验收完成。真实桌面 QA、最终 head CI 和 Community 分支 review 必须完成后才可交付。建议保留原 PR：按 #14 → #15 → #16 → #17 → #18 合并，并在同一批合入上述补修。保留提交祖先关系可避免后续累积 PR 重复展示历史改动。任何 head 更新或主分支变动都应重新检查合并差异及相关测试。
 
-本次没有执行真实 Anthropic/OpenAI/ChatGPT 请求，也没有进行真实 Obsidian 桌面或 iPhone QA。传输、Vault、设置控件和聊天组件由测试替身提供；Svelte 通过编译检查，但其 Markdown 渲染清理和手机设置布局仍需真实运行验收。发布前应做这部分 QA。
+初始阶段仅完成离线验证。下方补充本轮原生桌面及真实 ChatGPT OAuth 证据；真实 Anthropic/OpenAI API-key、物理 iPhone 与强制进程崩溃仍未验证。
 
 沿用 #18 明确的产品边界：选区约束保护该笔记中的直接写入；其他笔记仍可编辑，重命名其他笔记时 Obsidian 可能更新选区笔记中的链接。快照保存在内存，不写入聊天历史，不发送给模型。连续范围外编辑可迁移；无法确认原选区时要求重新选择。
 
@@ -57,3 +57,26 @@ GitHub 上 5 个原始 head 的 check 均成功，GraphQL 回读均没有 review
 之前只完成代码与离线检查，未完成本项目既有的真实 QA → Community branch review 流程。已从当前 main 新建 `codex/pr-14-18-integration`，按顺序生成 5 个 merge commit，再应用全部补修。5 个原始 head 均为本分支祖先，生产源代码与原补修分支逐文件一致。
 
 补修在新分支对应 `93d185a`、`a8a848e`、`61e8fbe`、`34dded7`。隔离测试库已有私有备份，1,771 个资料副本有测试前 SHA-256 记录。原生 QA 脚本已准备；目前电脑控制操作无法可靠确认，CLI 也未启用，因此原生测试保持未执行状态，没有提交 Community 扫描来替代自检。
+
+
+## 原生桌面与真实 OAuth 验证通过
+
+在已授权的隔离测试库执行，原生 API 报告版本为 1.13.7。CLI 用于调用 QA 插件命令、完整窗口重载以及读取真实 DOM 和截图。测试前保留原插件与聊天状态的私有备份。
+
+原生 QA 加载实际生产 main.js；模拟传输时通过独立 `require` 代理注入 requestUrl，不改写 Obsidian 的只读 API 模块。原生 Vault、设置 DOM、登录 Modal、Svelte 组件、插件生命周期和保存均真实执行。模拟模型设置不写入真实 SecretStorage。完成模拟测试后恢复标准插件加载器，再进行窗口重载和真实 OAuth 请求。
+
+- 升级前后的可见聊天、API 历史、provider/model 均保留。
+- 实际设置 DOM 的 Enter 事件生效；背景点击不会取消登录，正常关闭仍取消。
+- 工具仅修改选区，范围外内容字节保持；整篇替换被拒绝；完整选区删除后不会继续扩大范围。
+- 实际 Svelte UI 显示模型回答和工具参数。
+- Stop/Clear/关闭面板释放 ask_user；旧请求完成不解锁新轮次，也不显示迟到回答。
+- 标准加载器下，完整窗口重载恢复可见/API 历史。
+- 真实 ChatGPT OAuth / gpt-6.1-sol 完成 create_file、set_properties、read_file；重载后先回忆标记，再 edit_document 追加标记并读回，无错误。
+- 保存的 main/backup 副本相同；1,771 个资料副本的测试前后 SHA-256 全部相同。
+- 安装的生产 main.js 与候选构建 SHA-256 均为 `05f72f2a10cec9d94945276d9456eba0eb1d037d2fc96ffbe36299932a82e98f`。
+
+可公开的去敏报告：[原生 QA](pr-14-18-native-qa.json)、[真实 OAuth QA](pr-14-18-live-qa.json)。私有备份、资料文件路径与 OAuth 凭据不提交到仓库。
+
+最初一轮 QA 脚本因只读 requestUrl 赋值失败，没有被记为通过；之后改为独立装载代理。那一轮写入的模拟 provider 设置及聊天已从备份恢复，模拟 key 仅在确认等于本次固定测试值时清除；OAuth SecretStorage 登录保留。后续模拟设置保存使用无副作用替身，以防测试 key 写入真实 SecretStorage。
+
+Community 检查将固定到提交上述证据后的最终 head；当前尚未记为通过。

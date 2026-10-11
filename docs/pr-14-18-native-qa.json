@@ -1,0 +1,24 @@
+{
+  "appVersion": "1.13.7",
+  "pluginVersion": "0.4.1",
+  "upgradeHistory": true,
+  "upgradeSettings": true,
+  "scope": "native Obsidian desktop with mocked provider transport",
+  "checks": [
+    "native-settings-enter",
+    "native-login-backdrop-and-close",
+    "selection-tool-native-vault",
+    "svelte-render",
+    "tool-card-parameters",
+    "scope-refusal",
+    "whole-selection-deletion",
+    "ask-user-stop",
+    "ask-user-clear",
+    "ask-user-close",
+    "overlapping-stopped-turns",
+    "matching-persisted-copies"
+  ],
+  "passed": true,
+  "windowReload": "passed",
+  "productionBuildSHA256": "05f72f2a10cec9d94945276d9456eba0eb1d037d2fc96ffbe36299932a82e98f"
+}

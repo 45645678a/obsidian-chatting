@@ -1,0 +1,28 @@
+{
+  "firstTurn": true,
+  "provider": "chatgpt-oauth",
+  "model": "gpt-6.1-sol",
+  "errors": [],
+  "tools": [
+    {
+      "name": "create_file",
+      "error": false
+    },
+    {
+      "name": "read_file",
+      "error": false
+    },
+    {
+      "name": "set_properties",
+      "error": false
+    },
+    {
+      "name": "read_file",
+      "error": false
+    }
+  ],
+  "reloadContinuation": "passed",
+  "restoredVisible": true,
+  "matchingCopies": true,
+  "productionBuildSHA256": "05f72f2a10cec9d94945276d9456eba0eb1d037d2fc96ffbe36299932a82e98f"
+}
