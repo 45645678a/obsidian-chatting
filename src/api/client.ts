@@ -42,7 +42,7 @@ export async function sendMessage(
       return sendAnthropicMessage(settings, messages, tools, systemPrompt);
     }
     if (settings.provider === "chatgpt-oauth") {
-      return sendChatGPTOAuthMessage(settings, messages, tools, systemPrompt);
+      return sendChatGPTOAuthMessage(settings, messages, tools, systemPrompt, shouldStop);
     }
     return sendOpenAIMessage(settings, messages, tools, systemPrompt);
   };

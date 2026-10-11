@@ -86,6 +86,7 @@ export async function sendChatGPTOAuthMessage(
   messages: UnifiedMessage[],
   tools: UnifiedToolDef[],
   systemPrompt: string,
+  shouldStop: () => boolean = () => false,
 ): Promise<UnifiedResponse> {
   if (!oauthService) {
     throw new ChatGPTOAuthError(
@@ -93,9 +94,10 @@ export async function sendChatGPTOAuthMessage(
     );
   }
 
+  const service = oauthService;
   let credential;
   try {
-    credential = await oauthService.getUsableCredential();
+    credential = await service.getUsableCredential();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new ChatGPTOAuthError(
@@ -165,6 +167,10 @@ export async function sendChatGPTOAuthMessage(
   // Codex backend only accepts streaming requests. We always send
   // `stream: true` and parse the buffered SSE body client-side.
   const body = { ...baseBody, stream: true };
+  const checkCancelled = () => {
+    if (shouldStop()) throw new Error("Request cancelled.");
+  };
+  checkCancelled();
   try {
     return await sendOnce(body, credential.accessToken, credential.accountId, identity);
   } catch (e) {
@@ -172,12 +178,14 @@ export async function sendChatGPTOAuthMessage(
     // and retry once. A second 401, or a failed refresh, keeps the
     // "reconnect" error.
     if (!(e instanceof ProviderError) || e.status !== 401) throw e;
+    checkCancelled();
     let renewed;
     try {
-      renewed = await oauthService.renewRejected(credential);
+      renewed = await service.renewRejected(credential);
     } catch {
       throw e;
     }
+    checkCancelled();
     if (!renewed) throw e;
     return sendOnce(body, renewed.accessToken, renewed.accountId, identity);
   }

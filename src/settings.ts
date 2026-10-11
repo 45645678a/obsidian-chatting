@@ -464,8 +464,6 @@ export class ChatSettingTab extends PluginSettingTab {
 
 export class ChatGPTDeviceLoginModal extends Modal {
   private cancelled = false;
-  /** Set by a press on the dimmed background, whose close request is ignored. */
-  private backgroundPressed = false;
 
   constructor(
     app: App,
@@ -476,25 +474,16 @@ export class ChatGPTDeviceLoginModal extends Modal {
     super(app);
   }
 
-  /**
-   * Stays open on clicks outside the dialog: users switch to the browser and
-   * back, and a stray click cancelled the login. Escape, the close button and
-   * Cancel still close it.
-   */
-  close(): void {
-    if (this.backgroundPressed) {
-      this.backgroundPressed = false;
-      return;
-    }
-    super.close();
-  }
-
+  /** Suppress backdrop events only; Escape, Cancel and successful login still close normally. */
   private ignoreBackgroundClicks(): void {
-    this.containerEl.querySelector(".modal-bg")?.addEventListener("pointerdown", () => {
-      this.backgroundPressed = true;
-      // Clear it if the press didn't turn into a close request.
-      window.setTimeout(() => { this.backgroundPressed = false; }, 500);
-    }, { capture: true });
+    const background = this.containerEl.querySelector(".modal-bg");
+    const ignore = (event: Event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    for (const type of ["pointerdown", "mousedown", "click", "touchstart"]) {
+      background?.addEventListener(type, ignore, { capture: true, passive: false });
+    }
   }
 
   onOpen(): void {
