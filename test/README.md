@@ -12,8 +12,12 @@ a fake Obsidian API, an in-memory vault and mocked `requestUrl`; test files
 import what they need from it. No credentials or live API calls are needed.
 Tests cover assistant output encoding, native thinking/reasoning/search replay,
 read → create/edit flows, parallel tools, cancellation, history restoration,
-Anthropic `pause_turn` and thinking configuration, and OpenAI conversation
-isolation. These tests do not establish live-service or physical-iOS behavior.
+Anthropic `pause_turn` and thinking configuration, OpenAI conversation
+isolation, and the vault tools: `edit_document` input checks and insert
+positions, `set_properties` input checks, `read_file` and `read_document`
+refusing binary files, the local date from `get_current_datetime`, and
+quoting of a multi-line selection. These tests do not establish
+live-service or physical-iOS behavior.
 
 Two Node scripts that exercise the ChatGPT/Codex Responses endpoint
 **without** going through Obsidian, so iteration on the

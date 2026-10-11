@@ -1,5 +1,20 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { App, TFile, getFrontMatterInfo, normalizePath } from "obsidian";
 import type { ToolResult } from "../types";
+
+/** Images the read tools refuse (SVG is text, so they read it). */
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif", "ico"];
+
+/**
+ * Files the read tools refuse because their text would be useless to the
+ * model. Best effort by extension: an unlisted binary file is still read.
+ */
+const BINARY_EXTENSIONS = [
+  "pdf", "epub", "zip", "gz", "tar", "7z", "rar", "jar", "iso", "dmg", "exe", "dll", "so", "dylib", "bin",
+  "mp3", "wav", "m4a", "ogg", "flac", "aac", "opus",
+  "webm", "mp4", "m4v", "mov", "mkv", "avi", "ogv", "3gp", "mpeg", "mpg",
+  "woff", "woff2", "ttf", "otf", "eot", "psd", "raw",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "sqlite", "db",
+];
 
 type AskUserCallback = (question: string) => Promise<string>;
 
@@ -78,11 +93,16 @@ async function ensureParentFolder(app: App, filePath: string): Promise<void> {
   }
 }
 
-function findFrontmatterEnd(content: string): number {
-  if (!content.startsWith("---")) return -1;
-  const secondDash = content.indexOf("---", 3);
-  if (secondDash === -1) return -1;
-  return secondDash + 3;
+/** An error for an image or binary file, whose text would be garbage; null for text. */
+function refuseNonText(file: TFile, tool: string): ToolResult | null {
+  const extension = file.extension.toLowerCase();
+  if (IMAGE_EXTENSIONS.includes(extension)) {
+    return { result: `${file.path} is an image; ${tool} reads text only. To show it, the user can attach it to a chat message.`, isError: true };
+  }
+  if (BINARY_EXTENSIONS.includes(extension)) {
+    return { result: `${file.path} is a binary file; ${tool} reads text only.`, isError: true };
+  }
+  return null;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -97,8 +117,9 @@ function requiredRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
+/** A JSON object; arrays and null are not. */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ─── Tool Implementations ───────────────────────────────────────────────────
@@ -112,6 +133,8 @@ async function readDocument(
   if (!file) {
     return { result: path ? `File not found: ${path}` : "No active document open.", isError: true };
   }
+  const refusal = refuseNonText(file, "read_document");
+  if (refusal) return refusal;
 
   // cachedRead() is faster for display-only reads
   const content = await app.vault.cachedRead(file);
@@ -123,7 +146,13 @@ async function editDocument(
   input: Record<string, unknown>
 ): Promise<ToolResult> {
   const operation = requiredString(input.operation);
-  const content = requiredString(input.content);
+  // A missing `content` must not become "": replace_all would blank the
+  // note and find_replace would delete the found text, both reported as
+  // success. An explicit "" (delete on purpose) is fine.
+  if (typeof input.content !== "string") {
+    return { result: "'content' is required for edit_document (use \"\" to delete text).", isError: true };
+  }
+  const content = input.content;
   const find = optionalString(input.find);
   const position = optionalString(input.position);
 
@@ -135,7 +164,7 @@ async function editDocument(
 
   switch (operation) {
     case "replace_all":
-      await app.vault.modify(file, content);
+      await app.vault.process(file, () => content);
       return { result: `Replaced all content in ${file.path}.`, isError: false };
 
     case "find_replace": {
@@ -175,26 +204,20 @@ async function editDocument(
       if (!position) {
         return { result: "'position' parameter is required for insert.", isError: true };
       }
+      if (position !== "beginning" && position !== "end" && position !== "after_frontmatter") {
+        return { result: `Unknown position: ${position}. Use beginning, end or after_frontmatter.`, isError: true };
+      }
 
       await app.vault.process(file, (data) => {
-        switch (position) {
-          case "beginning":
-            return content + "\n" + data;
-          case "end":
-            return data + "\n" + content;
-          case "after_frontmatter": {
-            const fmEnd = findFrontmatterEnd(data);
-            if (fmEnd === -1) return content + "\n" + data;
-            return data.substring(0, fmEnd) + "\n" + content + data.substring(fmEnd);
-          }
-          default:
-            return data; // Unknown position, return unchanged
-        }
+        if (position === "end") return data + "\n" + content;
+        // After the frontmatter as Obsidian reads it (0 without one), so a
+        // "---" inside a value doesn't count.
+        const start = position === "after_frontmatter" ? getFrontMatterInfo(data).contentStart : 0;
+        const head = data.substring(0, start);
+        // A note that ends right at the closing --- has no line break after it.
+        const separator = head && !head.endsWith("\n") ? "\n" : "";
+        return head + separator + content + "\n" + data.substring(start);
       });
-
-      if (position !== "beginning" && position !== "end" && position !== "after_frontmatter") {
-        return { result: `Unknown position: ${position}`, isError: true };
-      }
 
       return { result: `Inserted content at ${position} of ${file.path}.`, isError: false };
     }
@@ -260,6 +283,9 @@ async function readFile(
   if (!file) {
     return { result: `File not found: ${path}`, isError: true };
   }
+
+  const refusal = refuseNonText(file, "read_file");
+  if (refusal) return refusal;
 
   const content = await app.vault.cachedRead(file);
   return { result: content, isError: false };
@@ -471,7 +497,9 @@ function getCurrentDatetime(): ToolResult {
     second: "2-digit",
     timeZoneName: "short",
   });
-  const dateOnly = now.toISOString().split("T")[0]; // YYYY-MM-DD for daily notes
+  // YYYY-MM-DD in the user's time zone, as daily notes are named.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const dateOnly = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
   return {
     result: `Local: ${local}\nISO: ${iso}\nDate: ${dateOnly}`,

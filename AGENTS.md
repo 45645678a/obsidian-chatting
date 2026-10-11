@@ -67,7 +67,7 @@ npm run svelte-check   # Svelte check
 | read_document | `vault.cachedRead()` | Falls back to active file if no path |
 | edit_document | `vault.process()` | Atomic read-modify-write |
 | search_vault | `getMarkdownFiles()` + `cachedRead()` | Linear scan, capped |
-| read_file | `vault.getFileByPath()` + `cachedRead()` | Any file type |
+| read_file | `vault.getFileByPath()` + `cachedRead()` | Text files; images and binary files refused |
 | create_file | `vault.create()` | Auto-creates parent folders |
 | list_files | `vault.getFiles()` | Capped at 100 results |
 | rename_file | `fileManager.renameFile()` | Updates all links |
