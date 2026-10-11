@@ -19,6 +19,9 @@ export const bundled = await build({
     export { executeTool } from './src/tools/executor';
     export { TOOL_DEFINITIONS } from './src/tools/registry';
     export { ObsidianChatView } from './src/ui/chat-view';
+    export { ChatGPTOAuthService } from './src/auth/chatgptOAuth';
+    export { ChatGPTOAuthStore } from './src/auth/chatgptOAuthStore';
+    export { ChatGPTDeviceLoginModal } from './src/settings';
   `, resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, write: false, platform: 'node', format: 'esm',
   plugins: [{ name: 'obsidian-test-transport', setup(build) {

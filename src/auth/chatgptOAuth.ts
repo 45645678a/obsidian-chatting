@@ -30,6 +30,8 @@ const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const DEVICE_VERIFICATION_URI = `${ISSUER}/codex/device`;
 const DEVICE_REDIRECT_URI = `${ISSUER}/deviceauth/callback`;
 const POLL_MARGIN_MS = 3000;
+/** How long a device code is polled: it expires after 15 minutes. */
+const DEVICE_CODE_TIMEOUT_MS = 15 * 60 * 1000;
 const USER_AGENT = "chatting-with-ai/chatgpt-oauth";
 
 export class ChatGPTOAuthError extends Error {
@@ -62,7 +64,8 @@ interface IdTokenClaims {
 
 interface TokenResponse {
   access_token: string;
-  refresh_token: string;
+  /** A refresh answer may leave it out: the old refresh token stays valid. */
+  refresh_token?: string;
   expires_in?: number;
   id_token?: string;
 }
@@ -133,6 +136,9 @@ const describeError = (response: { status: number; text?: string; json?: unknown
 };
 
 export class ChatGPTOAuthService {
+  /** The refresh in flight; parallel requests share it. */
+  private refreshing: Promise<ChatGPTOAuthCredential> | null = null;
+
   constructor(private readonly store: ChatGPTOAuthStore) {}
 
   /** Synchronous read of the stored credential (whether or not it's expired). */
@@ -194,24 +200,36 @@ export class ChatGPTOAuthService {
     };
 
     const promise = (async (): Promise<ChatGPTOAuthCredential> => {
+      const deadline = Date.now() + DEVICE_CODE_TIMEOUT_MS;
       while (true) {
         if (cancelled) {
           throw new ChatGPTOAuthError("ChatGPT login was cancelled.");
         }
+        if (Date.now() > deadline) {
+          throw new ChatGPTOAuthError("The ChatGPT login code has expired. Start the login again.");
+        }
 
-        const response = await requestUrl({
-          url: `${ISSUER}/api/accounts/deviceauth/token`,
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
-          },
-          body: JSON.stringify({
-            device_auth_id: authorization.deviceAuthId,
-            user_code: authorization.userCode,
-          }),
-          throw: false,
-        });
+        let response;
+        try {
+          response = await requestUrl({
+            url: `${ISSUER}/api/accounts/deviceauth/token`,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent": USER_AGENT,
+            },
+            body: JSON.stringify({
+              device_auth_id: authorization.deviceAuthId,
+              user_code: authorization.userCode,
+            }),
+            throw: false,
+          });
+        } catch {
+          // No connection for a moment (e.g. a phone while the user signs
+          // in in the browser): ask again after the interval.
+          await sleep(authorization.intervalMs + POLL_MARGIN_MS);
+          continue;
+        }
 
         if (response.status >= 200 && response.status < 300) {
           const data = response.json as Partial<DeviceTokenSuccess>;
@@ -247,8 +265,22 @@ export class ChatGPTOAuthService {
 
   /**
    * Refresh an expiring credential. Stores the new credential on success.
+   * Parallel calls share one request: a refresh token may only be used once.
    */
-  async refreshCredential(
+  refreshCredential(
+    credential: Pick<ChatGPTOAuthCredential, "refreshToken" | "accountId">,
+  ): Promise<ChatGPTOAuthCredential> {
+    this.refreshing ??= this.refresh(credential).finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+
+  /**
+   * Disconnect or a new sign-in may replace the stored credential while the
+   * request runs: the result is then not stored, and the caller gets an error.
+   */
+  private async refresh(
     credential: Pick<ChatGPTOAuthCredential, "refreshToken" | "accountId">,
   ): Promise<ChatGPTOAuthCredential> {
     const response = await requestUrl({
@@ -266,6 +298,10 @@ export class ChatGPTOAuthService {
       throw: false,
     });
 
+    if (this.store.get()?.refreshToken !== credential.refreshToken) {
+      throw new ChatGPTOAuthError("The ChatGPT sign-in changed while the token was refreshed. Try again.");
+    }
+
     if (response.status < 200 || response.status >= 300) {
       throw new ChatGPTOAuthError(
         `ChatGPT token refresh failed: HTTP ${response.status}${describeError(response)}`,
@@ -273,9 +309,24 @@ export class ChatGPTOAuthService {
     }
 
     const data = response.json as TokenResponse;
-    const next = this.toCredential(data, credential.accountId);
+    const next = this.toCredential(data, credential.accountId, credential.refreshToken);
     this.store.set(next);
     return next;
+  }
+
+  /**
+   * A new credential after the server rejected `rejected` (401): the stored
+   * one if another request refreshed it meanwhile, else a refresh (shared
+   * with one already running). Null when disconnected. Throws if the
+   * refresh fails.
+   */
+  async renewRejected(
+    rejected: Pick<ChatGPTOAuthCredential, "accessToken">,
+  ): Promise<ChatGPTOAuthCredential | null> {
+    const current = this.store.get();
+    if (!current) return null;
+    if (current.accessToken !== rejected.accessToken) return current;
+    return this.refreshCredential(current);
   }
 
   /**
@@ -319,18 +370,28 @@ export class ChatGPTOAuthService {
       );
     }
 
-    return this.toCredential(response.json as TokenResponse);
+    return this.toCredential(response.json as TokenResponse | undefined);
   }
 
+  /**
+   * A refresh answer without a refresh token keeps `previousRefreshToken`.
+   * Without an access token (or any refresh token) it is an error: storing
+   * it would sign the user out silently.
+   */
   private toCredential(
-    tokens: TokenResponse,
+    tokens: TokenResponse | undefined,
     fallbackAccountId?: string,
+    previousRefreshToken?: string,
   ): ChatGPTOAuthCredential {
+    const refreshToken = tokens?.refresh_token || previousRefreshToken;
+    if (!tokens || typeof tokens.access_token !== "string" || !tokens.access_token || typeof refreshToken !== "string" || !refreshToken) {
+      throw new ChatGPTOAuthError("The ChatGPT token response is missing tokens.");
+    }
     const now = Date.now();
     const accountId = extractAccountId(tokens) ?? fallbackAccountId;
     return {
       accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
+      refreshToken,
       expiresAt: now + (tokens.expires_in ?? 3600) * 1000,
       updatedAt: now,
       ...(tokens.id_token ? { idToken: tokens.id_token } : {}),

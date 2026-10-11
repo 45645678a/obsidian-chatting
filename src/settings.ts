@@ -455,8 +455,10 @@ export class ChatSettingTab extends PluginSettingTab {
 
 // ─── Device-flow login modal ────────────────────────────────────────────────
 
-class ChatGPTDeviceLoginModal extends Modal {
+export class ChatGPTDeviceLoginModal extends Modal {
   private cancelled = false;
+  /** Set by a press on the dimmed background, whose close request is ignored. */
+  private backgroundPressed = false;
 
   constructor(
     app: App,
@@ -467,7 +469,29 @@ class ChatGPTDeviceLoginModal extends Modal {
     super(app);
   }
 
+  /**
+   * Stays open on clicks outside the dialog: users switch to the browser and
+   * back, and a stray click cancelled the login. Escape, the close button and
+   * Cancel still close it.
+   */
+  close(): void {
+    if (this.backgroundPressed) {
+      this.backgroundPressed = false;
+      return;
+    }
+    super.close();
+  }
+
+  private ignoreBackgroundClicks(): void {
+    this.containerEl.querySelector(".modal-bg")?.addEventListener("pointerdown", () => {
+      this.backgroundPressed = true;
+      // Clear it if the press didn't turn into a close request.
+      window.setTimeout(() => { this.backgroundPressed = false; }, 500);
+    }, { capture: true });
+  }
+
   onOpen(): void {
+    this.ignoreBackgroundClicks();
     const { contentEl } = this;
     contentEl.empty();
     new Setting(contentEl).setName("Connect ChatGPT").setHeading();
@@ -538,7 +562,7 @@ class ChatGPTDeviceLoginModal extends Modal {
 
   onClose(): void {
     if (!this.cancelled) {
-      // If the user closed via Esc / outside click, treat it as cancel.
+      // If the user closed via Esc or the close button, treat it as cancel.
       this.handle.cancel();
     }
     this.contentEl.empty();
