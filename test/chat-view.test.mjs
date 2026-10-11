@@ -262,3 +262,37 @@ test('Clear stops a running turn on its own; the stopped turn adds nothing', asy
   assert.deepEqual(plugin.chatHistory, []);
   assert.deepEqual(chat.shown, []);
 });
+
+
+for (const action of ['Stop', 'Clear']) {
+  test(`${action}: an old request completing does not unlock a newer running turn`, async () => {
+    const { view, chat } = await chatSetup('anthropic');
+    const pending = [];
+    chat.setInputEnabled = enabled => { chat.enabled = enabled; };
+    transport(() => new Promise(resolve => pending.push(resolve)));
+    const old = view.handleUserMessage('Old', null);
+    await until(() => pending.length === 1);
+    if (action === 'Stop') view.handleStop(); else view.clearConversation();
+    const next = view.handleUserMessage('Next', null);
+    await until(() => pending.length === 2);
+    pending[0](response('anthropic', [text('late old answer')]));
+    await old;
+    assert.equal(view.running, true);
+    assert.equal(chat.enabled, false);
+    pending[1](response('anthropic', [text('new answer')]));
+    await next;
+    assert.equal(view.running, false);
+    assert.equal(chat.enabled, true);
+  });
+}
+
+test('Closing the view releases a pending ask_user turn', async () => {
+  const { view, chat } = await chatSetup('anthropic');
+  transport(() => response('anthropic', [call('ask', 'ask_user', { question: 'Which?' })], 'tool_use'));
+  const asking = view.handleUserMessage('Ask', null);
+  await until(() => chat.askUser);
+  await view.onClose();
+  assert.equal(chat.askUser, null);
+  await asking;
+  assert.equal(view.running, false);
+});
