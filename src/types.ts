@@ -111,6 +111,8 @@ export interface SelectionScope {
   from?: number;
   /** How many copies of the text come before the selection in the note (0: it is the first). */
   occurrence?: number;
+  /** In-memory editor snapshot used to relocate safely; never sent to the model. */
+  sourceText?: string;
 }
 
 // ─── Tool Execution ─────────────────────────────────────────────────────────
