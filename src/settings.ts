@@ -392,11 +392,18 @@ export class ChatSettingTab extends PluginSettingTab {
         text.setPlaceholder(DEFAULT_PROVIDER_MODELS[s.provider]).setValue(s.model);
         // Saved when the field is left or Enter is pressed, not per keystroke:
         // deleting an ID key by key would save each shorter ID as the model.
-        text.inputEl.addEventListener("change", () => {
+        const commit = () => {
           const id = text.getValue().trim();
-          if (!id) return;
+          if (!id || id === s.model) return;
           s.model = id;
           void this.plugin.saveSettings();
+        };
+        text.inputEl.addEventListener("change", commit);
+        text.inputEl.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" && !event.isComposing) {
+            event.preventDefault();
+            commit();
+          }
         });
       });
   }
