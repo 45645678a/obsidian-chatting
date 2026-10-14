@@ -45,3 +45,13 @@ yarn-error.log*
 # --- planning notes (private) ---
 NOTES.local.md
 TODO.local.md
+
+# Personal plugin state must never be published with this fork.
+chat-state*.json
+conversations*.json
+data.next.json
+data.backup.json
+oauth-credentials*.json
+.npmrc
+.env.*
+release-assets/

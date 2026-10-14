@@ -1,0 +1,19 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
+const {FollowNoteMethods}=require('./follow-note-methods.cjs');const {createConversationSupport}=require('./conversation-support.cjs');
+function harness(kind='free',path=''){
+ const events={},requests=[],support=createConversationSupport(),active={id:'original',kind,path,lastNotePath:null};
+ const app={workspace:{activeLeaf:null,getMostRecentLeaf:()=>null,getActiveFile:()=>({extension:'md',path:'book/chapter/a.md'}),on:(name,fn)=>{events[name]=fn;return fn;}},vault:{on:()=>()=>{}}};
+ const Factory=vm.runInNewContext('('+FollowNoteMethods.toString()+')',{chatConversations:support,VIEW_TYPE_CHAT:'chat',import_obsidian12:{Notice:class{}},window:{setTimeout,clearTimeout}});
+ const plugin=Object.assign(new Factory(),{app,settings:{followActiveNote:true,conversationScope:kind},pendingConversationRequest:null,conversationRoutingReady:true,conversationNavigation:0,
+ activeConversation:()=>active,requestConversation:async req=>requests.push(req),saveSettings:async()=>{},refreshConversationControls:()=>{},syncBookBrowse:record=>{plugin.browse=record;},registerEvent:()=>{},register:()=>{}});
+ return {plugin,requests,active,events,app};
+}
+test('自由和章节对话下仍自动路由到小节',async()=>{for(const kind of ['free','chapter']){const h=harness(kind,'book/chapter');await h.plugin.followConversationFile({extension:'md',path:'book/chapter/b.md'});assert.equal(h.requests[0].target.kind,'note');assert.equal(h.requests[0].target.path,'book/chapter/b.md');assert.equal(h.requests[0].automatic,true);}});
+test('重复的 file-open 不覆盖手动选择，重新进入阅读页可主动跟随',async()=>{const h=harness();const file={extension:'md',path:'book/chapter/a.md'};await h.plugin.followConversationFile(file);h.requests.length=0;await h.plugin.followConversationFile(file);assert.equal(h.requests.length,0);await h.plugin.followConversationFile(file,{force:true});assert.equal(h.requests.length,1);});
+test('关闭跟随停止自动请求，并取消排队中的自动切换',async()=>{const h=harness();h.plugin.pendingConversationRequest={automatic:true};await h.plugin.setConversationFollow(false);assert.equal(h.plugin.pendingConversationRequest,null);await h.plugin.followConversationFile({extension:'md',path:'book/chapter/b.md'});assert.equal(h.requests.length,0);});
+test('关闭跟随不会取消用户排队的手动切换',async()=>{const h=harness();const manual={id:'selected'};h.plugin.pendingConversationRequest=manual;await h.plugin.setConversationFollow(false);assert.equal(h.plugin.pendingConversationRequest,manual);});
+test('从自由对话重新启用跟随，立即对应当前阅读页',async()=>{const h=harness();h.plugin.settings.followActiveNote=false;h.plugin.followObservedPath='book/chapter/a.md';await h.plugin.setConversationFollow(true);assert.equal(h.requests[0].target.path,'book/chapter/a.md');});
+test('返回当前小节时取消过时切换并同步选择栏',async()=>{const h=harness('note','book/chapter/a.md');h.plugin.pendingConversationRequest={target:{kind:'note',path:'book/chapter/b.md'}};await h.plugin.followConversationFile({extension:'md',path:'book/chapter/a.md'});assert.equal(h.plugin.pendingConversationRequest,null);assert.equal(h.plugin.browse,h.active);assert.equal(h.requests.length,0);});
+test('切换已打开的笔记标签触发跟随，进入聊天面板不会触发',async()=>{const h=harness();h.plugin.initializeLibraryFeatures();const leaf={view:{file:{extension:'md',path:'book/chapter/b.md'},getViewType:()=> 'markdown'}};h.events['active-leaf-change'](leaf);await Promise.resolve();assert.equal(h.requests.length,1);h.events['active-leaf-change'](leaf);h.events['active-leaf-change']({view:{getViewType:()=> 'chat'}});await Promise.resolve();assert.equal(h.requests.length,1);});
+test('非笔记页面不改变手动对话',async()=>{const h=harness();await h.plugin.followConversationFile(null);await h.plugin.followConversationFile({extension:'pdf',path:'book.pdf'});assert.equal(h.requests.length,0);});

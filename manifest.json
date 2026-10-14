@@ -1,11 +1,11 @@
 {
   "id": "chatting-with-ai",
-  "name": "Chatting with AI",
-  "version": "0.4.2",
+  "name": "Chatting with AI (Study Fork)",
+  "version": "0.4.3",
   "minAppVersion": "1.11.4",
-  "description": "Agentic AI chat assistant that reads, edits, and creates notes through natural conversation. Supports Anthropic, OpenAI, and ChatGPT account sign-in.",
+  "description": "Unofficial study-focused fork: per-note conversations, book navigation, math rendering, and preview-confirmed note edits.",
   "author": "Yuxiao (o1xhack)",
   "authorUrl": "https://github.com/o1xhack",
   "fundingUrl": "https://github.com/sponsors/o1xhack",
-  "isDesktopOnly": false
+  "isDesktopOnly": true
 }

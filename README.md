@@ -1,229 +1,110 @@
-# Chatting with AI
+# Chatting with AI — Study Fork
 
-[![Latest release](https://img.shields.io/github/v/release/o1xhack/obsidian-chatting?include_prereleases&label=release&color=7c3aed)](https://github.com/o1xhack/obsidian-chatting/releases)
-[![Total downloads](https://img.shields.io/github/downloads/o1xhack/obsidian-chatting/total?color=7c3aed)](https://github.com/o1xhack/obsidian-chatting/releases)
-[![License](https://img.shields.io/github/license/o1xhack/obsidian-chatting?color=7c3aed)](LICENSE)
-[![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-7c3aed)](https://obsidian.md)
-<br>
-[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-o1xhack-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/o1xhack)
+[![Check](https://github.com/45645678a/obsidian-chatting/actions/workflows/check.yml/badge.svg)](https://github.com/45645678a/obsidian-chatting/actions/workflows/check.yml)
+[![Release](https://img.shields.io/github/v/release/45645678a/obsidian-chatting)](https://github.com/45645678a/obsidian-chatting/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**An agentic AI assistant that lives in your Obsidian vault — same experience on phone, tablet, and desktop.**
+An **unofficial, desktop-oriented study fork** of
+[o1xhack/obsidian-chatting](https://github.com/o1xhack/obsidian-chatting), based on
+upstream **0.4.2**. Maintained by [45645678a](https://github.com/45645678a).
+Original authorship and the MIT license are retained; see [NOTICE](NOTICE.md).
 
-> 🌐 **English** · [简体中文](docs/i18n/README.zh-CN.md) · [繁體中文](docs/i18n/README.zh-TW.md) · [日本語](docs/i18n/README.ja.md)
+**[简体中文说明](README.zh-CN.md)** · [Download](https://github.com/45645678a/obsidian-chatting/releases/latest) · [Build and contribute](docs/FORK_DEVELOPMENT.md)
 
-<p align="center">
-  <img src="assets/screenshot-settings.png" alt="Provider settings on iPhone" width="260">
-  <img src="assets/screenshot-chat-cn.png" alt="Web search powered answer in Chinese" width="260">
-  <img src="assets/screenshot-chat-en.png" alt="Clean answer in English with bullet list" width="260">
-</p>
+## What this fork adds
 
----
+- **Math rendering:** converts AI-produced TeX delimiters for Obsidian display while preserving code examples and the original stored message.
+- **Reasoning controls:** per-model effort selection using the authenticated model catalog's advertised capabilities.
+- **Reviewed editing:** read-only by default; editable mode previews each proposed change before applying it and rejects stale previews.
+- **Study shortcuts:** explain selected text, work through derivations, and review the current note.
+- **Conversation library:** separate note/chapter/free conversations, persistent drafts and attachments, history, search, and archives.
+- **Book navigation:** select a book, chapter, and section from the vault's folder structure, with optional following of the reading note.
+- **Reading-pane capture:** attach a screenshot of the selected reading pane on desktop. It is placed in the draft; sending remains a user action.
+- **Collapsible options:** keep the reading/chat interface compact.
 
-## ✨ Why?
+The upstream Anthropic API, OpenAI API, and experimental ChatGPT account
+provider implementations remain available. Provider/account availability and
+model capabilities depend on the relevant service; this fork does not imply
+official endorsement by Obsidian, OpenAI, Anthropic, or the upstream authors.
 
-- **Three providers, your choice** — Anthropic API, OpenAI API, or sign in with your ChatGPT account. No marketplace of half-broken providers.
-- **14 vault-native tools** — read, edit, search, create, rename, frontmatter, backlinks. The agent goes from idea to changed files without leaving the chat.
-- **Mobile-parity, by design** — no streaming, no Node-only modules, no localhost callbacks. iOS and Android behave the same as desktop.
-- **Selection scope** — highlight text in any note, send it to chat, the assistant edits only inside the selection.
-- **Secrets in the OS keychain** — never in `data.json`, never synced across devices.
+## Install this fork
 
-## 🎬 One conversation, many tools
+Requires **desktop Obsidian 1.11.4 or later**. The enhanced workflow was used
+and validated on Windows desktop. Reading-pane capture uses Electron APIs;
+this fork's release manifest is deliberately marked desktop-only.
 
-Ask once, the agent figures out which tools to call:
+1. Download `chatting-with-ai-0.4.3.zip` from this repository's [Releases](https://github.com/45645678a/obsidian-chatting/releases/latest).
+2. Extract its `chatting-with-ai` directory into `<vault>/.obsidian/plugins/`.
+3. Reload Obsidian, then enable **Chatting with AI (Study Fork)** under **Settings → Community plugins**.
+4. Choose a provider in the plugin settings and configure your own account or API key. No account configuration is distributed with the plugin.
 
-```
-You: Find every note in /Books that's missing a `rating` property and add `rating: ?`.
+If the upstream plugin is already installed, disable it before replacing its
+code files. Preserve your existing `data.json`, chat databases, and recovery
+copies. The plugin ID remains `chatting-with-ai`, so the two versions replace
+one another rather than running side by side. Existing single-conversation
+history is migrated into the conversation library.
 
-Assistant
-  → search_vault("/Books")               → 12 files
-  → get_properties("Books/Sapiens.md")   → has rating
-  → get_properties("Books/Hail Mary.md") → no rating
-  → set_properties("Books/Hail Mary.md", { rating: "?" })
-  → ... (5 more)
+The official Community Plugins listing points to the upstream project.
+Install and update **this fork** from this repository's releases; an upstream
+community-plugin update can replace these enhancements.
 
-  Done — added `rating: ?` to 6 notes:
-  - Books/Hail Mary.md
-  - Books/Klara and the Sun.md
-  - ...
-```
+## Reading workflow
 
-The agent reads before it edits, prefers small surgical changes over rewrites, and doesn't re-ask once you confirm.
+Folders such as `Book/Chapter/Section.md` become the book/chapter/section
+selectors. Choose a section or turn on automatic following to associate chat
+with the note being read. Free conversations and manual history selection
+remain available. Turn off automatic following when you want manual control.
 
-## 🎯 Selection scope
+The image button captures the visible reading pane on desktop. Its context
+menu keeps the ordinary image-file picker available. Captured images remain
+attached to the conversation draft until you send or remove them.
 
-Highlight text in any note, right-click, choose **Send selection to chat**. The selection becomes a pill above the input and the assistant edits only inside the selected range — leaving the rest of the document byte-identical.
+## Data and permissions
 
-```
-[ pill: "...the introduction was a bit dry, and..."  ✕ ]
+Notes/context requested for a chat turn and images you send are transmitted
+to the selected AI provider. The plugin's read-only setting prevents its
+note-writing tools; editable mode requires a preview decision for each change.
 
-You: tighten this — keep my voice
-```
+Conversation content, draft text, and attached images are stored locally in
+the plugin directory, primarily in `conversations.json` and recovery copies.
+Legacy `chat-state*.json` files may remain after migration. Credentials use
+the upstream Obsidian SecretStorage integration. Vault synchronization and
+backups are controlled by your own configuration; do not share or commit
+these personal files. This repository and its release archives contain none
+of them.
 
-The agent uses find-and-replace scoped to the selection text, and the tools enforce it for that turn: in that note, only the highlighted copy of the text can change; rewriting the whole note, inserting, setting properties, or renaming or deleting it (or a folder it's in) is refused. The editor snapshot keeps the selected copy anchored when text is added above it. If the selected text changed or its identity is ambiguous, the tools ask you to select it again. Other notes stay editable, and renaming one of them still updates links to it in this note.
+## Build and validate
 
-## 🛠️ 14 vault-native tools
-
-| Group | Tools | What they do |
-|---|---|---|
-| **Read** | `read_document`, `read_file`, `search_vault`, `list_files`, `get_backlinks`, `get_properties`, `get_current_datetime` | Open notes/files, search by name and content, browse the tree, find backlinks, read frontmatter, fetch the current time in your locale. |
-| **Write** | `edit_document`, `create_file`, `set_properties` | Surgical find-and-replace / insert / full replace; create new notes (parent folders auto-created); safe YAML frontmatter merge or remove. |
-| **Manage** | `rename_file`, `delete_file`, `open_document`, `ask_user` | Rename or move (links auto-update); move to trash (respects your trash setting); open a file in the editor; pause and ask you when something is ambiguous. |
-
-## ⚙️ Providers
-
-| Provider | Auth | Default model | Notes |
-|---|---|---|---|
-| **Anthropic** | API key | Claude Sonnet 4.6 | Adaptive thinking, web search, prompt caching. |
-| **OpenAI** | API key | GPT-6.1 Sol | Responses API, reasoning, web search. |
-| **ChatGPT account** | Sign in with ChatGPT | GPT-5.5 | Uses your ChatGPT plan instead of an OpenAI API key. |
-
-Attach up to four images to a message, including by pasting an image from the clipboard. Images are sent with that message to the selected provider; large photos are resized before sending.
-
-> **About ChatGPT account login.** This provider signs you in with your ChatGPT account and routes requests through the ChatGPT/Codex backend (not `api.openai.com`). It requires an active ChatGPT plan with Codex access. The model picker fetches the Codex catalog for your account; account permissions still determine whether a model can be used.
-
-### Model list updates
-
-All three providers load their authenticated model catalogs in settings. Lists are cached for 24 hours and survive restarts. Settings show the last list immediately, then refresh it in the background when expired. No daily timer or request on every settings visit is scheduled. The refresh button checks immediately. Failed requests retain the last list and selected model; account/API-key changes use a separate cache.
-
-ChatGPT OAuth discovers the latest stable client version from OpenAI's official GitHub release metadata and keeps the last known version or bundled fallback if discovery fails. Reasoning effort, reasoning summaries and parallel-tool options follow catalog metadata where provided. New model IDs normally require no plugin update, but upstream protocol changes can still require one. Custom model IDs survive reload. Catalog data contains no credentials.
-
-## 🚀 Quick start
-
-1. Open **Settings → Community plugins → Browse**.
-2. Search for **Chatting with AI**.
-3. Click **Install**, then **Enable**.
-4. **Settings → Chatting with AI** → pick a provider, paste an API key (or click **Connect ChatGPT**).
-5. Open the chat from the ribbon icon or the command palette.
-
-## 📦 Install
-
-### Community Plugins (recommended)
-
-This is the default install path now that Chatting with AI is in the official Obsidian Community Plugins directory.
-
-1. In Obsidian, open **Settings → Community plugins**.
-2. If prompted, turn off Restricted Mode / turn on community plugins.
-3. Click **Browse** and search for **Chatting with AI**.
-4. Click **Install**, then **Enable**.
-
-### Migrating from BRAT
-
-If you previously installed the beta through BRAT, move to the community version once it appears in the plugin browser:
-
-1. In **Settings → Community plugins → Installed plugins**, disable **Chatting with AI**.
-2. Open **BRAT** settings and remove `o1xhack/obsidian-chatting` from the beta plugin list.
-3. Return to **Settings → Community plugins → Browse** and search for **Chatting with AI**.
-4. If Obsidian shows it as **Installed**, open its entry and click **Enable**. If it shows **Install**, click **Install**, then **Enable**.
-5. Open **Settings → Chatting with AI** and confirm your provider settings are still present.
-
-The plugin migrates data from the old `obsidian-chatting` folder to `chatting-with-ai` on first load. If you used a very old beta and the community browser does not recognize it as installed, installing the community version is still safe; the migration runs when the new plugin starts.
-
-<details>
-<summary><b>Manual release install</b></summary>
-
-1. Download `main.js`, `manifest.json`, `styles.css` from the [latest release](https://github.com/o1xhack/obsidian-chatting/releases/latest)
-2. Place them in `<vault>/.obsidian/plugins/chatting-with-ai/`
-3. Reload Obsidian and enable **Chatting with AI** in Community Plugins
-
-</details>
-
-<details>
-<summary><b>Build from source</b></summary>
-
-```bash
-git clone https://github.com/o1xhack/obsidian-chatting.git
+```sh
+git clone https://github.com/45645678a/obsidian-chatting.git
 cd obsidian-chatting
-npm install
-npm run build
+npm ci
+npm run check
+npm run package
 ```
 
-Symlink into a test vault:
+Use Node.js 22. `npm run check` builds the enhanced bundle, runs the upstream
+and enhancement tests, checks TypeScript/Svelte, and reviews release contents.
+`npm run package` creates an allowlisted ZIP, standalone installation files,
+license notices, and SHA-256 checksums in `release-assets/`.
 
-```bash
-ln -s "$(pwd)" /path/to/vault/.obsidian/plugins/chatting-with-ai
-```
+The added implementation is a checked post-build layer in `enhancements/`;
+the original TypeScript/Svelte source remains in `src/`. Transformations fail
+when their expected upstream anchors change. See
+[development notes](docs/FORK_DEVELOPMENT.md) before upgrading upstream.
 
-</details>
+Tests use synthetic fixtures and mocked services. They do not send live AI
+requests or prove account/provider availability. Source and release contents
+are reproducible without access to the maintainer's computer or vault.
 
-## 🧭 Design principles
+## Attribution and license
 
-| Principle | What it means |
-|---|---|
-| **Mobile is not an afterthought** | Every change is validated on iOS and Android. No streaming, no Node-only modules, no localhost callbacks. |
-| **Three sane providers** | Anthropic + OpenAI for stability, ChatGPT account for users who'd rather not manage an API key. |
-| **Secrets in the keychain** | API keys and OAuth credentials go through Obsidian SecretStorage. They never land in `data.json`, so they never sync to other devices. |
-| **No vault indexing** | Linear search, capped. Predictable, no background work, no memory pressure on phones. |
-| **Conversation persists** | Chat history survives Obsidian restarts. Stored locally in `chat-state.json`, never synced. |
-| **Right sidebar on mobile** | Slides in from the edge — your document stays visible underneath. |
+MIT, with the original copyright notices preserved in [LICENSE](LICENSE).
+Upstream authors include **Omar Shahine**, **Yuxiao (o1xhack)**, and
+**Thomas Schierl**. The source lineage and fork changes are recorded in
+[NOTICE](NOTICE.md); bundled dependency licenses are in
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md).
 
-## 🗺️ Roadmap
-
-- [x] Three providers (Anthropic, OpenAI, ChatGPT account)
-- [x] 14 vault-native tools
-- [x] iOS / Android parity
-- [x] Selection scope
-- [x] Official Obsidian Community Plugins listing
-- [ ] Multi-conversation history with archive / search
-- [x] Image attachments where the provider supports them
-- [x] Dynamic provider catalogs with automatic refresh when the 24-hour cache expires
-
-Have a request? Open an issue.
-
-## ❓ FAQ
-
-<details>
-<summary><b>Will my notes be uploaded somewhere?</b></summary>
-
-Only what the agent needs for the current turn. When you ask a question, the agent decides which tools to call — `read_document`, `search_vault`, etc. — and the contents fetched by those calls (plus the active note context) are sent to your chosen provider. Images you attach are sent with that message and retained in local chat history until you clear the conversation. Nothing is uploaded in the background. There is no vault index.
-
-</details>
-
-<details>
-<summary><b>Does it really work on mobile?</b></summary>
-
-Yes — that's the design constraint everything else is built around. Requests go through Obsidian's `requestUrl()` (mobile WebViews enforce CORS), there's no streaming, no Node-only modules, no localhost callback for OAuth. iOS and Android run the same code path as desktop.
-
-</details>
-
-<details>
-<summary><b>Is the ChatGPT account login free?</b></summary>
-
-It uses your existing ChatGPT plan (Plus, Pro, Team, Enterprise) — there's no separate billing. You need an active plan with Codex access. The plugin doesn't talk to `api.openai.com`; it talks to the same backend the Codex CLI uses.
-
-</details>
-
-<details>
-<summary><b>Can you add provider X?</b></summary>
-
-Probably not — keeping the provider list small is a deliberate choice. Two API providers cover the major ecosystems, and ChatGPT account login covers the "I just have a ChatGPT plan" case. Adding more would mean more permutations to validate on mobile.
-
-</details>
-
-<details>
-<summary><b>Where is chat history stored? Will it sync?</b></summary>
-
-Locally in `<vault>/.obsidian/plugins/chatting-with-ai/chat-state.json`, with a second copy in `chat-state.next.json` to recover from an interrupted save. If neither copy can be read, existing files are kept as `chat-state.corrupt-<time>.json` or `chat-state.next.corrupt-<time>.json` instead of being overwritten. If a backup cannot be made, saving is disabled for that session and a notice explains why. It is **not** synced by Obsidian Sync (plugin data files are excluded by default). API keys live in the OS keychain via SecretStorage and are also not synced. Attached image data is retained in this local chat history until you clear the conversation.
-
-</details>
-
-## 🤝 Contributing
-
-Issues and PRs welcome. Before opening a PR:
-
-- Run `npx tsc --noEmit` and `npm run svelte-check`
-- Test on at least one mobile platform (iOS or Android) — the mobile-parity rule is real
-- For larger changes, open an issue first to align on direction
-
-## 🙏 Acknowledgements
-
-Originally derived from [omarshahine/obsidian-chat](https://github.com/omarshahine/obsidian-chat) (MIT). The original copyright is preserved in `LICENSE`. Chatting with AI is now an independent project with its own roadmap — major rewrites include the agent loop, mobile-parity work, the ChatGPT account provider, and the selection-scope feature.
-
-Thanks to [Thomas Schierl](https://github.com/thomas0schierl) for contributing the chat-saving fixes and shared regression-test harness in [PR #10](https://github.com/o1xhack/obsidian-chatting/pull/10).
-
-## 📄 License
-
-[MIT](./LICENSE).
-
----
-
-Author: [Yuxiao (o1xhack)](https://github.com/o1xhack) · [app.o1xhack.com](https://app.o1xhack.com)
+[Historical upstream documentation](docs/UPSTREAM_README.md) is retained for
+reference. Its upstream installation and mobile-parity statements do not
+describe this desktop fork.

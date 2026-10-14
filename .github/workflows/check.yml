@@ -1,6 +1,7 @@
 name: Check
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -21,4 +22,5 @@ jobs:
       - run: npm test
       - run: npx tsc --noEmit
       - run: npm run svelte-check
-      - run: npm run build
+      - run: npm run check:release
+      - run: npm run package

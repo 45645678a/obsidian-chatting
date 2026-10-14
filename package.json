@@ -1,18 +1,18 @@
 {
   "name": "chatting-with-ai",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "author": {
     "name": "Yuxiao (o1xhack)",
     "url": "https://github.com/o1xhack"
   },
-  "homepage": "https://github.com/o1xhack/obsidian-chatting",
+  "homepage": "https://github.com/45645678a/obsidian-chatting",
   "bugs": {
-    "url": "https://github.com/o1xhack/obsidian-chatting/issues"
+    "url": "https://github.com/45645678a/obsidian-chatting/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/o1xhack/obsidian-chatting.git"
+    "url": "https://github.com/45645678a/obsidian-chatting.git"
   },
   "scripts": {
     "test": "node scripts/test.mjs",
@@ -21,7 +21,11 @@
     "svelte-check": "svelte-check --tsconfig tsconfig.json",
     "release": "./scripts/release.sh",
     "codex:login": "node test/codex-login.mjs",
-    "codex:smoke": "node test/codex-smoke.mjs"
+    "codex:smoke": "node test/codex-smoke.mjs",
+    "pretest": "npm run build",
+    "check:release": "node scripts/check-release.mjs",
+    "package": "node scripts/package-release.mjs",
+    "check": "npm test && tsc --noEmit && npm run svelte-check && npm run check:release"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -35,5 +39,9 @@
   },
   "dependencies": {
     "@noble/hashes": "2.4.0"
-  }
+  },
+  "contributors": [
+    "45645678a"
+  ],
+  "license": "MIT"
 }

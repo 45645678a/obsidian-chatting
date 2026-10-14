@@ -73,3 +73,138 @@ body.is-phone .ochatting-settings .setting-item-control {
   justify-content: flex-end;
   gap: 0.5em;
 }
+
+/* Local reasoning-effort slider, 2026-10-13. */
+.ochatting-reasoning-host {
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 8px 14px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+}
+.ochatting-reasoning-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 23px;
+  font-size: var(--font-ui-smaller);
+}
+.ochatting-reasoning-title { color: var(--text-muted); }
+.ochatting-reasoning-value { color: var(--text-normal); font-weight: 600; }
+.ochatting-reasoning-reset {
+  margin-left: auto;
+  padding: 2px 6px;
+  height: auto;
+  min-height: 23px;
+  font-size: var(--font-ui-smaller);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+.ochatting-reasoning-reset:disabled { opacity: .45; }
+input[type="range"].ochatting-reasoning-slider {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 7px 0 3px;
+  accent-color: var(--interactive-accent);
+}
+.ochatting-reasoning-ticks {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.ochatting-reasoning-tick.is-active { color: var(--interactive-accent); font-weight: 600; }
+.ochatting-reasoning-help {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.ochatting-reasoning-setting { flex-wrap: wrap; }
+.ochatting-reasoning-setting .setting-item-control { flex: 1 1 280px; min-width: 0; }
+.ochatting-reasoning-setting .ochatting-reasoning-host {
+  width: 100%;
+  padding: 0;
+  border-bottom: none;
+}
+
+/* Read-only / reviewed editing and selection study actions, 2026-10-13. */
+.ochatting-study-controls {flex-shrink:0;padding:8px 14px 10px;border-bottom:1px solid var(--background-modifier-border);}
+.ochatting-study-mode-row {display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:var(--font-ui-smaller);}
+.ochatting-study-label {color:var(--text-muted);}
+.ochatting-edit-mode {max-width:100%;font-size:var(--font-ui-smaller);}
+.ochatting-study-mode-status {color:var(--text-muted);font-size:11px;}
+.ochatting-study-selection {margin:9px 0 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text-muted);}
+.ochatting-study-actions {display:flex;flex-wrap:wrap;gap:6px;}
+.ochatting-study-action {flex:1 1 90px;min-width:0;font-size:var(--font-ui-smaller);padding:4px 6px;}
+.ochatting-study-setting .ochatting-study-controls {border:0;padding:0;}
+.ochatting-study-setting {flex-wrap:wrap;}
+.ochatting-study-setting .setting-item-control {flex:1 1 260px;}
+.ochatting-change-modal {width:min(1000px,94vw);max-width:94vw;}
+.ochatting-change-modal .modal-content {overflow-y:auto;}
+.ochatting-change-intro,.ochatting-change-count {font-size:var(--font-ui-small);color:var(--text-muted);}
+.ochatting-change-card {margin:12px 0;padding:12px;border:1px solid var(--background-modifier-border);border-radius:8px;}
+.ochatting-change-path {font-size:var(--font-ui-medium);overflow-wrap:anywhere;margin:0 0 6px;}
+.ochatting-change-tabs {display:flex;gap:6px;margin:8px 0;}
+.ochatting-change-tabs button {font-size:var(--font-ui-smaller);}
+.ochatting-change-diff {font-family:var(--font-monospace);font-size:12px;line-height:1.6;max-height:48vh;overflow:auto;border:1px solid var(--background-modifier-border);border-radius:4px;}
+.ochatting-change-diff>div {display:flex;}
+.ochatting-diff-sign {width:24px;min-width:24px;text-align:center;user-select:none;}
+.ochatting-diff-text {white-space:pre-wrap;overflow-wrap:anywhere;padding-right:6px;}
+.ochatting-diff-add {background:rgba(45,164,78,.14);}
+.ochatting-diff-add .ochatting-diff-sign {color:var(--text-success,#238636);}
+.ochatting-diff-remove {background:rgba(220,55,55,.13);}
+.ochatting-diff-remove .ochatting-diff-sign {color:var(--text-error);}
+.ochatting-diff-skip {color:var(--text-muted);background:var(--background-secondary);}
+.ochatting-change-render {max-height:48vh;overflow:auto;}
+.ochatting-change-full {margin-top:10px;font-size:var(--font-ui-small);}
+.ochatting-change-full pre,.ochatting-change-files {white-space:pre-wrap;overflow-wrap:anywhere;max-height:35vh;overflow:auto;font-size:12px;}
+.ochatting-change-delete {color:var(--text-error);font-weight:600;}
+.ochatting-change-buttons {display:flex;justify-content:flex-end;gap:10px;position:sticky;bottom:0;padding:12px 0 0;background:var(--background-primary);}
+
+/* Compact, persistent assistant options. */
+.ochatting-options {flex-shrink:0;min-height:0;max-height:55%;overflow:auto;border-bottom:1px solid var(--background-modifier-border);}
+.ochatting-options-summary {display:flex;align-items:center;gap:8px;padding:7px 14px;list-style:none;cursor:pointer;font-size:var(--font-ui-smaller);user-select:none;}
+.ochatting-options-summary::-webkit-details-marker {display:none;}
+.ochatting-options-summary::before {content:'›';font-size:18px;line-height:1;transform-origin:center;}
+.ochatting-options[open]>.ochatting-options-summary::before {transform:rotate(90deg);}
+.ochatting-options-summary:focus-visible {outline:2px solid var(--interactive-accent);outline-offset:-2px;}
+.ochatting-options-state {margin-left:auto;color:var(--text-muted);font-size:11px;}
+.ochatting-options .ochatting-study-controls {border-bottom:0;}
+
+.ochatting-conversation-bar {flex-shrink:0;padding:7px 14px;border-bottom:1px solid var(--background-modifier-border);}
+.ochatting-conversation-row {display:flex;align-items:center;gap:6px;min-width:0;}
+.ochatting-conversation-picker {flex:1;min-width:0;max-width:100%;text-overflow:ellipsis;font-size:var(--font-ui-smaller);}
+.ochatting-conversation-row button {flex-shrink:0;padding:3px 8px;font-size:var(--font-ui-smaller);}
+.ochatting-conversation-status {margin-top:4px;font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ochatting-conversation-settings {padding:9px 14px;border-top:1px solid var(--background-modifier-border);}
+.ochatting-conversation-scope {font-size:var(--font-ui-smaller);min-width:0;}
+.ochatting-conversation-follow {display:flex;align-items:center;gap:7px;margin:7px 0;font-size:var(--font-ui-smaller);}
+.ochatting-history-modal {width:min(850px,94vw);max-width:94vw;}
+.ochatting-history-search {width:100%;}
+.ochatting-history-count {font-size:var(--font-ui-smaller);color:var(--text-muted);margin:8px 0;}
+.ochatting-history-list {max-height:65vh;overflow:auto;}
+.ochatting-history-card {border:1px solid var(--background-modifier-border);border-radius:7px;padding:11px;margin:8px 0;}
+.ochatting-history-title {font-weight:600;overflow-wrap:anywhere;}
+.ochatting-history-title input {width:100%;}
+.ochatting-history-meta,.ochatting-history-path {font-size:11px;color:var(--text-muted);margin-top:4px;overflow-wrap:anywhere;}
+.ochatting-history-excerpt {font-size:var(--font-ui-small);margin-top:7px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.ochatting-history-actions {display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;}
+.ochatting-history-actions button {font-size:var(--font-ui-smaller);}
+.ochatting-conversation-setting {flex-wrap:wrap;}
+.ochatting-conversation-setting .setting-item-control {flex:1 1 280px;}
+.ochatting-conversation-setting .ochatting-conversation-settings {padding:0;border:0;width:100%;}
+
+.ochatting-conversation-library {padding:10px 14px;border-top:1px solid var(--background-modifier-border);}
+.ochatting-book-picker {display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
+.ochatting-book-row {display:grid;grid-template-columns:36px minmax(0,1fr);gap:8px;align-items:center;font-size:var(--font-ui-smaller);}
+.ochatting-book-row>span {color:var(--text-muted);}
+.ochatting-book-row select {width:100%;min-width:0;text-overflow:ellipsis;font-size:var(--font-ui-smaller);}
+.ochatting-history-filters {margin-bottom:10px;}
+.ochatting-history-modal .ochatting-history-list {max-height:45vh;}
+.ochatting-options-state {min-width:0;max-width:75%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.ochatting-conversation-setting .ochatting-conversation-library {padding:0;border:0;width:100%;}
+.ochatting-attach-btn.is-capturing {opacity:.5;cursor:wait;}

@@ -1,5 +1,17 @@
 # Chatting with AI
 
+## Study-fork maintenance
+
+This fork retains upstream 0.4.2 in `src/` and applies the readable, tested
+enhancement layer in `enhancements/` during builds. Read
+`docs/FORK_DEVELOPMENT.md` and `NOTICE.md` before changing the integration.
+Use `npm ci` and `npm run check`; `npm test` builds the full runtime before
+running upstream and enhancement tests. Do not weaken patch-anchor checks
+to make a changed upstream build pass. Never add personal plugin state,
+credentials, live-verification captures, or vault contents to this repository.
+The fork release is desktop-only; upstream mobile descriptions below refer
+to the retained upstream architecture.
+
 Agentic AI chat plugin for Obsidian. Simple, mobile-first, three providers (Anthropic + OpenAI + ChatGPT account sign-in).
 
 ## Architecture

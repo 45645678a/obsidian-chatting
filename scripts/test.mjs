@@ -8,5 +8,10 @@ const files = readdirSync("test")
   .sort()
   .map((name) => `test/${name}`);
 
+files.push(...readdirSync("enhancements")
+  .filter((name) => name.endsWith(".test.cjs"))
+  .sort()
+  .map((name) => `enhancements/${name}`));
+
 const { status } = spawnSync(process.execPath, ["--test", ...files], { stdio: "inherit" });
 process.exit(status ?? 1);
